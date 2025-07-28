@@ -1,0 +1,79 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: #0D0F12;
+  color: white;
+  font-family: 'JetBrains Mono', monospace;
+  overflow-x: hidden;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1A1D23;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #00FF7F;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3BE8FF;
+}
+
+/* Glow effects */
+.glow-green {
+  box-shadow: 0 0 20px rgba(0, 255, 127, 0.3);
+}
+
+.glow-blue {
+  box-shadow: 0 0 20px rgba(59, 232, 255, 0.3);
+}
+
+/* Text glow */
+.text-glow-green {
+  text-shadow: 0 0 10px #00FF7F;
+}
+
+.text-glow-blue {
+  text-shadow: 0 0 10px #3BE8FF;
+}
+
+/* Matrix-style background animation */
+@keyframes matrix {
+  0% { transform: translateY(-100vh); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+.matrix-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.matrix-char {
+  position: absolute;
+  color: #00FF7F;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  animation: matrix 10s linear infinite;
+  opacity: 0.1;
+}
