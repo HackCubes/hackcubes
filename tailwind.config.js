@@ -21,6 +21,8 @@ module.exports = {
         'float': 'float 6s ease-in-out infinite',
         'glow': 'glow 2s ease-in-out infinite alternate',
         'matrix': 'matrix 10s linear infinite',
+        'pulse-glow': 'pulse-glow 2s ease-in-out infinite alternate',
+        'button-glow': 'button-glow 0.3s ease-in-out',
       },
       keyframes: {
         float: {
@@ -28,14 +30,22 @@ module.exports = {
           '50%': { transform: 'translateY(-20px)' },
         },
         glow: {
-          '0%': { boxShadow: '0 0 5px #00FF7F' },
-          '100%': { boxShadow: '0 0 20px #00FF7F, 0 0 30px #00FF7F' },
+          '0%': { boxShadow: '0 0 5px #00FF7F, 0 0 10px #00FF7F' },
+          '100%': { boxShadow: '0 0 20px #00FF7F, 0 0 30px #00FF7F, 0 0 40px #00FF7F' },
         },
         matrix: {
           '0%': { transform: 'translateY(-100vh)', opacity: '0' },
           '10%': { opacity: '1' },
           '90%': { opacity: '1' },
           '100%': { transform: 'translateY(100vh)', opacity: '0' },
+        },
+        'pulse-glow': {
+          '0%': { boxShadow: '0 0 5px rgba(0, 255, 127, 0.5)' },
+          '100%': { boxShadow: '0 0 20px rgba(0, 255, 127, 0.8), 0 0 30px rgba(0, 255, 127, 0.6)' },
+        },
+        'button-glow': {
+          '0%': { boxShadow: '0 0 5px rgba(0, 255, 127, 0.3)' },
+          '100%': { boxShadow: '0 0 15px rgba(0, 255, 127, 0.6), 0 0 25px rgba(0, 255, 127, 0.4)' },
         },
       },
       backgroundImage: {

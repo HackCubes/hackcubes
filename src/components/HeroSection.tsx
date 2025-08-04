@@ -1,20 +1,29 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { ChevronDown } from 'lucide-react';
+import Link from 'next/link';
+import { HackCubesLogo } from './icons/HackCubesLogo';
 import { MatrixBackground } from './animations/MatrixBackground';
 import { FloatingParticles } from './animations/FloatingParticles';
 import { ClientOnly } from './animations/ClientOnly';
-import Link from 'next/link';
 
 export const HeroSection: React.FC = () => {
-  const scrollToSignup = () => {
+   const scrollToSection = (sectionId: string) => {
+     const element = document.getElementById(sectionId);
+     if (element) {
+       element.scrollIntoView({ behavior: 'smooth' });
+     }
+   };
+
+   const scrollToSignup = () => {
     const signupSection = document.getElementById('signup');
     if (signupSection) {
       signupSection.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
-  return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
+   return (
+     <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
       {/* Client-only animations */}
       <ClientOnly>
         <MatrixBackground />
@@ -22,6 +31,16 @@ export const HeroSection: React.FC = () => {
       </ClientOnly>
 
       <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">
+        {/* Logo Animation */}
+        <motion.div
+          initial={{ opacity: 0, y: -50 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1, ease: "easeOut" }}
+          className="mb-8"
+        >
+          <HackCubesLogo width={300} height={90} className="mx-auto" />
+        </motion.div>
+
         {/* Main Headline */}
         <motion.h1
           initial={{ opacity: 0, y: 30 }}
@@ -42,12 +61,12 @@ export const HeroSection: React.FC = () => {
           First 10 hackers get a free entry-level cert. Early adopters: $99 per cert.
         </motion.p>
 
-        {/* Tagline */}
+        {/* Subheading */}
         <motion.p
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 0.7, ease: "easeOut" }}
-          className="text-lg text-gray-300 mb-8 font-mono"
+          className="text-lg md:text-xl text-gray-300 mb-12 max-w-3xl mx-auto leading-relaxed"
         >
           HackCubes is a gamified cybersecurity platform for hackers, by hackers!
         </motion.p>
@@ -60,14 +79,16 @@ export const HeroSection: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1, delay: 0.9, ease: "easeOut" }}
             whileHover={{ 
-              scale: 1.05,
-              boxShadow: "0 0 30px rgba(0, 255, 127, 0.5)"
+              scale: 1.08,
+              boxShadow: "0 0 40px rgba(0, 255, 127, 0.8), 0 0 80px rgba(0, 255, 127, 0.4), inset 0 0 20px rgba(0, 255, 127, 0.2)"
             }}
             whileTap={{ scale: 0.95 }}
             onClick={scrollToSignup}
-            className="bg-green-600 hover:bg-green-500 text-black font-bold py-4 px-8 rounded-lg text-xl transition-colors shadow-lg hover:shadow-green-500/50"
+            className="relative px-10 py-4 bg-gradient-to-r from-neon-green via-green-500 to-emerald-400 text-dark-bg font-bold rounded-2xl text-lg transition-all duration-500 border-2 border-neon-green/50 shadow-2xl shadow-neon-green/40 hover:shadow-neon-green/70 overflow-hidden group backdrop-blur-sm"
           >
-            🚀 Join Waitlist - Get Notified
+            <span className="relative z-10">🚀 Join Waitlist - Get Notified</span>
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-neon-green/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           </motion.button>
           
           {/* Earn Free Cert Button (Link to Challenge Page) */}
@@ -77,16 +98,37 @@ export const HeroSection: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 1, delay: 1.1, ease: "easeOut" }}
               whileHover={{ 
-                scale: 1.05,
-                boxShadow: "0 0 30px rgba(255, 215, 0, 0.5)"
+                scale: 1.08,
+                boxShadow: "0 0 40px rgba(59, 232, 255, 0.8), 0 0 80px rgba(59, 232, 255, 0.4), inset 0 0 20px rgba(59, 232, 255, 0.2)"
               }}
               whileTap={{ scale: 0.95 }}
-              className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-4 px-8 rounded-lg text-xl transition-colors shadow-lg hover:shadow-yellow-500/50 border-2 border-yellow-400"
+              className="relative px-10 py-4 bg-gradient-to-r from-dark-bg/80 to-dark-bg/60 border-2 border-electric-blue text-electric-blue font-bold rounded-2xl text-lg transition-all duration-500 hover:bg-gradient-to-r hover:from-electric-blue/20 hover:to-cyan-500/20 hover:text-white hover:border-cyan-400 shadow-2xl shadow-electric-blue/40 hover:shadow-electric-blue/70 overflow-hidden group backdrop-blur-sm"
             >
-              🏆 Earn Free Certificate
+              <span className="relative z-10 flex items-center gap-2">
+                🏆 Earn Free Certificate
+              </span>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-electric-blue/30 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out" />
+              <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-electric-blue/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
             </motion.button>
           </Link>
         </div>
+
+        {/* Scroll Indicator */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1, delay: 1.2 }}
+          className="absolute bottom-8 left-1/2 transform -translate-x-1/2"
+        >
+          <motion.div
+            animate={{ y: [0, 10, 0] }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            className="cursor-pointer"
+            onClick={() => scrollToSection('features')}
+          >
+            <ChevronDown size={32} className="text-neon-green" />
+          </motion.div>
+        </motion.div>
       </div>
     </section>
   );

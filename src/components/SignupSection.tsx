@@ -181,13 +181,19 @@ export const SignupSection: React.FC = () => {
                     {/* Submit Button */}
                     <motion.button
                       type="submit"
-                      whileHover={{ scale: 1.02 }}
+                      whileHover={{ 
+                        scale: 1.02,
+                        boxShadow: "0 0 25px rgba(0, 255, 127, 0.6), 0 0 50px rgba(0, 255, 127, 0.3)"
+                      }}
                       whileTap={{ scale: 0.98 }}
-                      className="w-full bg-gradient-to-r from-neon-green to-electric-blue text-dark-bg font-semibold py-3 px-6 rounded-lg flex items-center justify-center space-x-2 hover:shadow-lg hover:shadow-neon-green/50 transition-all duration-300 disabled:opacity-60"
+                      className="relative w-full bg-gradient-to-r from-neon-green via-green-400 to-electric-blue text-dark-bg font-bold py-4 px-6 rounded-xl flex items-center justify-center space-x-2 transition-all duration-300 shadow-lg shadow-neon-green/25 hover:shadow-neon-green/50 disabled:opacity-60 disabled:cursor-not-allowed border border-neon-green/30 overflow-hidden group"
                       disabled={isLoading}
                     >
-                      <span>{isLoading ? 'Submitting...' : 'Join the Waitlist'}</span>
-                      <ArrowRight size={20} />
+                      <span className="relative z-10 flex items-center gap-2">
+                        {isLoading ? 'Submitting...' : 'Join the Waitlist'}
+                        <ArrowRight size={20} />
+                      </span>
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
                     </motion.button>
                   </form>
                 ) : (

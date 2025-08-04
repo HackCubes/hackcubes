@@ -191,13 +191,16 @@ export default function LandingPage() {
                 viewport={{ once: true }}
                 whileHover={{ 
                   scale: 1.05,
-                  boxShadow: "0 0 30px rgba(0, 255, 127, 0.5)"
+                  boxShadow: "0 0 25px rgba(0, 255, 127, 0.6), 0 0 50px rgba(0, 255, 127, 0.3)"
                 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={scrollToSignup}
-                className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-500 hover:to-blue-500 text-white font-bold py-4 px-12 rounded-lg text-xl transition-all transform"
+                className="relative px-12 py-4 bg-gradient-to-r from-neon-green via-green-400 to-neon-green text-dark-bg font-bold rounded-xl text-xl transition-all duration-300 border border-neon-green/30 shadow-lg shadow-neon-green/25 hover:shadow-neon-green/50 overflow-hidden group"
               >
-                🚀 Join Waitlist Now
+                <span className="relative z-10 flex items-center gap-2">
+                  🚀 Join Waitlist Now
+                </span>
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
               </motion.button>
               
               <Link href="/challenge" passHref>
@@ -208,12 +211,15 @@ export default function LandingPage() {
                   transition={{ delay: 0.2 }}
                   whileHover={{ 
                     scale: 1.05,
-                    boxShadow: "0 0 30px rgba(255, 215, 0, 0.5)"
+                    boxShadow: "0 0 25px rgba(255, 215, 0, 0.6), 0 0 50px rgba(255, 215, 0, 0.3)"
                   }}
                   whileTap={{ scale: 0.95 }}
-                  className="bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-black font-bold py-4 px-12 rounded-lg text-xl transition-all transform"
+                  className="relative px-12 py-4 bg-gradient-to-r from-yellow-500 via-orange-400 to-yellow-500 text-dark-bg font-bold rounded-xl text-xl transition-all duration-300 border border-yellow-400/30 shadow-lg shadow-yellow-400/25 hover:shadow-yellow-400/50 overflow-hidden group"
                 >
-                  🏆 Solve Challenge & Get Free Cert
+                  <span className="relative z-10 flex items-center gap-2">
+                    🏆 Solve Challenge & Get Free Cert
+                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
                 </motion.button>
               </Link>
             </div>
