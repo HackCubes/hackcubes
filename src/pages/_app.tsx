@@ -6,24 +6,24 @@ export default function App({ Component, pageProps }: AppProps) {
   return (
     <>
       <Head>
-        <title>HackCubes - Master Cybersecurity</title>
-        <meta name="description" content="The premier cybersecurity learning platform. Master ethical hacking, penetration testing, and security analysis through hands-on labs and real-world scenarios." />
+        <title>⚡ HackCubes - Hack Your Way to a Free Cert!</title>
+        <meta name="description" content="Gamified cybersecurity platform for hackers, by hackers! First 10 hackers get free entry-level cert. Early adopters: $99 per cert." />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="keywords" content="cybersecurity, ethical hacking, penetration testing, CTF, security training, cyber education" />
+        <meta name="keywords" content="cybersecurity certification, ethical hacking, free cert, gamified learning, CTF challenges, hacker certification, cybersecurity training" />
         <meta name="author" content="HackCubes" />
         
         {/* Open Graph / Facebook */}
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://hackcubes.com/" />
-        <meta property="og:title" content="HackCubes - Master Cybersecurity" />
-        <meta property="og:description" content="The premier cybersecurity learning platform with hands-on labs and CTF challenges." />
+        <meta property="og:title" content="⚡ HackCubes - Hack Your Way to a Free Cert!" />
+        <meta property="og:description" content="First 10 hackers get free entry-level cert. Gamified cybersecurity platform for hackers, by hackers!" />
         <meta property="og:image" content="/og-image.jpg" />
 
         {/* Twitter */}
         <meta property="twitter:card" content="summary_large_image" />
         <meta property="twitter:url" content="https://hackcubes.com/" />
-        <meta property="twitter:title" content="HackCubes - Master Cybersecurity" />
-        <meta property="twitter:description" content="The premier cybersecurity learning platform with hands-on labs and CTF challenges." />
+        <meta property="twitter:title" content="⚡ HackCubes - Hack Your Way to a Free Cert!" />
+        <meta property="twitter:description" content="First 10 hackers get free entry-level cert. Gamified cybersecurity platform for hackers, by hackers!" />
         <meta property="twitter:image" content="/og-image.jpg" />
 
         {/* Favicon */}
