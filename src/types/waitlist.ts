@@ -17,4 +17,5 @@ export interface WaitlistSignupData {
   role?: string;
   interest_level?: 'low' | 'medium' | 'high';
   referral_source?: string;
+  inviteCode?: string;
 }

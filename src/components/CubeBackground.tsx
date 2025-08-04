@@ -94,10 +94,10 @@ export const CubeBackground: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 z-0">
+    <div className="fixed inset-0 z-0" style={{ pointerEvents: 'none' }}>
       <Canvas
         camera={{ position: [0, 0, 10], fov: 60 }}
-        style={{ background: 'transparent' }}
+        style={{ background: 'transparent', pointerEvents: 'none' }}
         gl={{ antialias: true, alpha: true }}
         dpr={[1, 2]}
       >

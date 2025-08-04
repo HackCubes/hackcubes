@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
+import Link from 'next/link';
 import { HackCubesLogo } from './icons/HackCubesLogo';
 import { MatrixBackground } from './animations/MatrixBackground';
 import { FloatingParticles } from './animations/FloatingParticles';
@@ -86,16 +87,18 @@ export const HeroSection: React.FC = () => {
             Get Started
           </motion.button>
 
-          <motion.button
-            whileHover={{ 
-              scale: 1.05,
-              boxShadow: "0 0 30px rgba(59, 232, 255, 0.5)"
-            }}
-            whileTap={{ scale: 0.95 }}
-            className="px-8 py-4 border-2 border-electric-blue text-electric-blue font-semibold rounded-lg text-lg transition-all duration-300 hover:bg-electric-blue hover:text-dark-bg glow-blue"
-          >
-            Join Free Trial
-          </motion.button>
+          <Link href="/challenge">
+            <motion.button
+              whileHover={{ 
+                scale: 1.05,
+                boxShadow: "0 0 30px rgba(59, 232, 255, 0.5)"
+              }}
+              whileTap={{ scale: 0.95 }}
+              className="px-8 py-4 border-2 border-electric-blue text-electric-blue font-semibold rounded-lg text-lg transition-all duration-300 hover:bg-electric-blue hover:text-dark-bg glow-blue"
+            >
+              🎯 Take Challenge
+            </motion.button>
+          </Link>
         </motion.div>
 
         {/* Scroll Indicator */}

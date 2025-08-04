@@ -3,9 +3,14 @@
 import { useState } from 'react';
 import { useWaitlist } from '@/hooks/useWaitlist';
 
-export default function WaitlistForm() {
+interface WaitlistFormProps {
+  inviteCode?: string;
+  candidateEmail?: string;
+}
+
+export default function WaitlistForm({ inviteCode, candidateEmail }: WaitlistFormProps) {
   const [formData, setFormData] = useState({
-    email: '',
+    email: candidateEmail || '',
     name: '',
     company: '',
     role: '',
@@ -24,6 +29,7 @@ export default function WaitlistForm() {
       role: formData.role || undefined,
       referral_source: formData.referralSource || undefined,
       interest_level: 'high',
+      inviteCode: inviteCode,
     });
   };
 
@@ -34,16 +40,16 @@ export default function WaitlistForm() {
 
   if (success) {
     return (
-      <div className="max-w-md mx-auto p-6 bg-green-50 border border-green-200 rounded-lg">
-        <h3 className="text-lg font-semibold text-green-800 mb-2">
+      <div className="max-w-md mx-auto p-6 bg-green-900/20 border border-green-700 rounded-lg">
+        <h3 className="text-lg font-semibold text-green-400 mb-2">
           🎉 You're on the waitlist!
         </h3>
-        <p className="text-green-700 mb-4">
+        <p className="text-green-300 mb-4">
           Thanks for joining! We'll notify you when HackCubes is ready.
         </p>
         <button
           onClick={reset}
-          className="text-green-600 hover:text-green-800 underline"
+          className="text-green-400 hover:text-green-300 underline"
         >
           Join another email
         </button>
@@ -52,17 +58,17 @@ export default function WaitlistForm() {
   }
 
   return (
-    <div className="max-w-md mx-auto p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
-      <h2 className="text-2xl font-bold text-gray-900 mb-2">
+    <div className="max-w-md mx-auto p-6 bg-gray-900/50 backdrop-blur-sm border border-gray-700 rounded-lg shadow-lg">
+      <h2 className="text-2xl font-bold text-white mb-2">
         Join the HackCubes Waitlist
       </h2>
-      <p className="text-gray-600 mb-6">
+      <p className="text-gray-300 mb-6">
         Be the first to know when we launch our revolutionary platform.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
             Email Address *
           </label>
           <input
@@ -72,13 +78,13 @@ export default function WaitlistForm() {
             required
             value={formData.email}
             onChange={handleInputChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             placeholder="your.email@example.com"
           />
         </div>
 
         <div>
-          <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1">
             Full Name
           </label>
           <input
@@ -87,13 +93,13 @@ export default function WaitlistForm() {
             name="name"
             value={formData.name}
             onChange={handleInputChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             placeholder="John Doe"
           />
         </div>
 
         <div>
-          <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="company" className="block text-sm font-medium text-gray-300 mb-1">
             Company
           </label>
           <input
@@ -102,13 +108,13 @@ export default function WaitlistForm() {
             name="company"
             value={formData.company}
             onChange={handleInputChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             placeholder="Acme Inc"
           />
         </div>
 
         <div>
-          <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="role" className="block text-sm font-medium text-gray-300 mb-1">
             Role
           </label>
           <input
@@ -117,13 +123,13 @@ export default function WaitlistForm() {
             name="role"
             value={formData.role}
             onChange={handleInputChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             placeholder="Software Engineer"
           />
         </div>
 
         <div>
-          <label htmlFor="referralSource" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="referralSource" className="block text-sm font-medium text-gray-300 mb-1">
             How did you hear about us?
           </label>
           <select
@@ -131,7 +137,7 @@ export default function WaitlistForm() {
             name="referralSource"
             value={formData.referralSource}
             onChange={handleInputChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
             <option value="">Select an option</option>
             <option value="twitter">Twitter</option>
@@ -144,21 +150,21 @@ export default function WaitlistForm() {
         </div>
 
         {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-red-700 text-sm">{error}</p>
+          <div className="p-3 bg-red-900/20 border border-red-700 rounded-md">
+            <p className="text-red-400 text-sm">{error}</p>
           </div>
         )}
 
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-700 text-white py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
         >
           {isLoading ? 'Joining...' : 'Join Waitlist'}
         </button>
       </form>
 
-      <p className="text-xs text-gray-500 mt-4 text-center">
+      <p className="text-xs text-gray-400 mt-4 text-center">
         We respect your privacy. No spam, ever.
       </p>
     </div>

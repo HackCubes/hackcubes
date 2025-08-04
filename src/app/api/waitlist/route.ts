@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     console.log('URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
     console.log('Key exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-    const data: WaitlistSignupData = await request.json();
+    const data: WaitlistSignupData & { inviteCode?: string } = await request.json();
     console.log('Request data:', data);
 
     // Validate required fields
@@ -30,6 +30,31 @@ export async function POST(request: NextRequest) {
       console.log('Email validation failed');
       return NextResponse.json(
         { error: 'Email is required' },
+        { status: 400 }
+      );
+    }
+
+    // Validate invite code
+    if (!data.inviteCode) {
+      console.log('Invite code validation failed');
+      return NextResponse.json(
+        { error: 'Invite code is required. Complete the challenge to get one!' },
+        { status: 400 }
+      );
+    }
+
+    // Check if the invite code exists and is not used
+    const { data: inviteCode, error: inviteError } = await supabase
+      .from('invite_codes')
+      .select('*')
+      .eq('code', data.inviteCode.trim().toUpperCase())
+      .eq('is_used', false)
+      .single();
+
+    if (inviteError || !inviteCode) {
+      console.log('Invalid invite code:', data.inviteCode);
+      return NextResponse.json(
+        { error: 'Invalid or expired invite code' },
         { status: 400 }
       );
     }
@@ -68,6 +93,21 @@ export async function POST(request: NextRequest) {
         { error: 'Failed to join waitlist' },
         { status: 500 }
       );
+    }
+
+    // Mark the invite code as used
+    const { error: updateError } = await supabase
+      .from('invite_codes')
+      .update({ 
+        is_used: true, 
+        used_at: new Date().toISOString(),
+        used_by_email: data.email 
+      })
+      .eq('id', inviteCode.id);
+
+    if (updateError) {
+      console.error('Error updating invite code:', updateError);
+      // Don't fail the whole operation, just log it
     }
 
     return NextResponse.json(
