@@ -204,7 +204,8 @@ export default function LandingPage() {
                 <motion.button
                   initial={{ opacity: 0, y: 30 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, delay: 0.2 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.2 }}
                   whileHover={{ 
                     scale: 1.05,
                     boxShadow: "0 0 30px rgba(255, 215, 0, 0.5)"
