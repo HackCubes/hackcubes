@@ -2,10 +2,12 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  experimental: {
-  },
   images: {
     domains: [],
+  },
+  // Simplified configuration for better Vercel compatibility
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'framer-motion'],
   },
 }
 

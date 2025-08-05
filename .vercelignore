@@ -1,0 +1,17 @@
+# Vercel ignore file
+node_modules
+.next
+.git
+*.log
+.env.local
+.DS_Store
+.vscode
+*.lock
+coverage
+.nyc_output
+dist
+build
+
+# Supabase
+supabase/.git
+supabase/functions/_*
