@@ -28,7 +28,8 @@ export const Footer: React.FC = () => {
   const quickLinks = [
     { label: 'Home', href: '#' },
     { label: 'Features', href: '#features' },
-    { label: 'Pricing', href: '#pricing' },
+    { label: 'Certifications', href: '/certification' },
+    { label: 'Challenge', href: '/challenge' },
     { label: 'About', href: '#about' },
     { label: 'Contact', href: '#contact' },
   ];

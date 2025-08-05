@@ -91,6 +91,27 @@ export const HeroSection: React.FC = () => {
             <div className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-neon-green/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           </motion.button>
           
+          {/* View Certifications Button */}
+          <Link href="/certification" passHref>
+            <motion.button
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, delay: 1.0, ease: "easeOut" }}
+              whileHover={{ 
+                scale: 1.08,
+                boxShadow: "0 0 40px rgba(255, 215, 0, 0.8), 0 0 80px rgba(255, 215, 0, 0.4), inset 0 0 20px rgba(255, 215, 0, 0.2)"
+              }}
+              whileTap={{ scale: 0.95 }}
+              className="relative px-10 py-4 bg-gradient-to-r from-yellow-500 via-yellow-400 to-amber-400 text-dark-bg font-bold rounded-2xl text-lg transition-all duration-500 border-2 border-yellow-500/50 shadow-2xl shadow-yellow-400/40 hover:shadow-yellow-400/70 overflow-hidden group backdrop-blur-sm"
+            >
+              <span className="relative z-10 flex items-center gap-2">
+                🎓 View Certifications
+              </span>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out" />
+              <div className="absolute inset-0 bg-gradient-to-r from-yellow-300/20 to-amber-300/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            </motion.button>
+          </Link>
+          
           {/* Earn Free Cert Button (Link to Challenge Page) */}
           <Link href="/challenge" passHref>
             <motion.button

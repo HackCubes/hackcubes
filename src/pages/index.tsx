@@ -203,6 +203,26 @@ export default function LandingPage() {
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
               </motion.button>
               
+              <Link href="/certification" passHref>
+                <motion.button
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.1 }}
+                  whileHover={{ 
+                    scale: 1.05,
+                    boxShadow: "0 0 25px rgba(59, 232, 255, 0.6), 0 0 50px rgba(59, 232, 255, 0.3)"
+                  }}
+                  whileTap={{ scale: 0.95 }}
+                  className="relative px-12 py-4 bg-gradient-to-r from-electric-blue via-cyan-400 to-electric-blue text-dark-bg font-bold rounded-xl text-xl transition-all duration-300 border border-electric-blue/30 shadow-lg shadow-electric-blue/25 hover:shadow-electric-blue/50 overflow-hidden group"
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    🎓 View All Certifications
+                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+                </motion.button>
+              </Link>
+              
               <Link href="/challenge" passHref>
                 <motion.button
                   initial={{ opacity: 0, y: 30 }}
