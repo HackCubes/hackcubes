@@ -18,8 +18,7 @@ export default function LandingPage() {
 
   // Countdown timer logic
   useEffect(() => {
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + 30); // 30 days from now
+    const targetDate = new Date('2025-08-20'); // Launch date: August 20th, 2025
     
     const timer = setInterval(() => {
       const now = new Date().getTime();
@@ -136,8 +135,8 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Features Section - Restored */}
-        <FeaturesSection />
+        {/* Features Section - Commented out per request */}
+        {/* <FeaturesSection /> */}
 
         {/* 4. Early Adopter Offer */}
         <section className="py-20 px-4 bg-gray-900/50 relative z-20">

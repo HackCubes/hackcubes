@@ -86,6 +86,8 @@ export const FeaturesSection: React.FC = () => {
       <div className="absolute inset-0 bg-gradient-to-b from-dark-bg via-dark-secondary to-dark-bg opacity-50" />
       
       <div className="relative z-10 max-w-7xl mx-auto">
+        {/* Why Choose HackCubes section - commented out per request */}
+        {/*
         <motion.div
           ref={titleRef}
           initial={{ opacity: 0, y: 30 }}
@@ -139,6 +141,7 @@ export const FeaturesSection: React.FC = () => {
             </motion.div>
           ))}
         </motion.div>
+        {/* End of commented section */}
       </div>
     </section>
   );

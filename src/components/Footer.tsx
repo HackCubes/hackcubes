@@ -20,8 +20,8 @@ export const Footer: React.FC = () => {
 
   const socialLinks = [
     { icon: <Github size={20} />, href: '#', label: 'GitHub' },
-    { icon: <Twitter size={20} />, href: '#', label: 'Twitter' },
-    { icon: <Linkedin size={20} />, href: '#', label: 'LinkedIn' },
+    { icon: <Twitter size={20} />, href: 'https://x.com/hackcubes', label: 'Twitter' },
+    { icon: <Linkedin size={20} />, href: 'https://www.linkedin.com/company/hackcubes', label: 'LinkedIn' },
     { icon: <Youtube size={20} />, href: '#', label: 'YouTube' },
   ];
 
@@ -46,7 +46,7 @@ export const Footer: React.FC = () => {
     { label: 'Privacy Policy', href: '#' },
     { label: 'Terms of Service', href: '#' },
     { label: 'Cookie Policy', href: '#' },
-    { label: 'GDPR', href: '#' },
+    // { label: 'GDPR', href: '#' }, // Commented out per request
   ];
 
   return (
@@ -73,12 +73,15 @@ export const Footer: React.FC = () => {
             <div className="space-y-3 text-sm text-gray-400">
               <div className="flex items-center space-x-3">
                 <Mail size={16} className="text-neon-green" />
-                <span>hello@hackcubes.com</span>
+                <span>support@hackcubes.com</span>
               </div>
+              {/* Phone number commented out per request */}
+              {/*
               <div className="flex items-center space-x-3">
                 <Phone size={16} className="text-electric-blue" />
                 <span>+1 (555) 123-4567</span>
               </div>
+              */}
               <div className="flex items-center space-x-3">
                 <MapPin size={16} className="text-neon-green" />
                 <span>San Francisco, CA</span>

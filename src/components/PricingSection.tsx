@@ -31,7 +31,7 @@ const defaultTiers: PricingTier[] = [
       '24-hour reporting window',
       'Lifetime certificate validity',
       'Digital badge for LinkedIn',
-      'Blockchain verification',
+      // 'Blockchain verification', // Commented out per request
       'Real-world vulnerable machines',
       'Professional report template'
     ],
@@ -212,11 +212,14 @@ export const PricingSection: React.FC<PricingProps> = ({ tiers = defaultTiers })
                 <h4 className="text-lg font-semibold text-white mb-2">Lifetime Validity</h4>
                 <p className="text-gray-300 text-sm">No renewal fees or expiration dates</p>
               </div>
+              {/* Blockchain verification commented out per request */}
+              {/*
               <div className="text-center">
                 <Shield className="w-12 h-12 text-electric-blue mx-auto mb-4" />
                 <h4 className="text-lg font-semibold text-white mb-2">Blockchain Verified</h4>
                 <p className="text-gray-300 text-sm">Tamper-proof certificate verification</p>
               </div>
+              */}
               <div className="text-center">
                 <Star className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
                 <h4 className="text-lg font-semibold text-white mb-2">Industry Recognized</h4>

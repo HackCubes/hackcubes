@@ -56,19 +56,20 @@ export const SignupSection: React.FC = () => {
     }
   };
 
-  const securityFeatures = [
-    {
-      icon: <Shield size={20} />,
-      text: "256-bit SSL Encryption"
-    },
-    {
-      icon: <Lock size={20} />,
-      text: "GDPR Compliant"
-    },
-    {
-      icon: <CheckCircle size={20} />,
-      text: "SOC 2 Certified"
-    }
+  const securityFeatures: Array<{icon: React.ReactNode, text: string}> = [
+    // Commented out security compliance features per request
+    // {
+    //   icon: <Shield size={20} />,
+    //   text: "256-bit SSL Encryption"
+    // },
+    // {
+    //   icon: <Lock size={20} />,
+    //   text: "GDPR Compliant"
+    // },
+    // {
+    //   icon: <CheckCircle size={20} />,
+    //   text: "SOC 2 Certified"
+    // }
   ];
 
   return (
@@ -116,19 +117,20 @@ export const SignupSection: React.FC = () => {
           </p>
         </motion.div>
 
-        <div className="grid md:grid-cols-2 gap-12 items-center">
-          {/* Form Section */}
+        <div className="flex justify-center">
+          {/* Centered Form Section */}
           <motion.div
-            initial={{ opacity: 0, x: -50 }}
-            animate={inView ? { opacity: 1, x: 0 } : {}}
+            initial={{ opacity: 0, y: 30 }}
+            animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.8, delay: 0.2 }}
+            className="w-full max-w-md"
           >
             <div className="bg-dark-secondary border border-gray-border rounded-2xl p-8 relative overflow-hidden">
               {/* Form glow effect */}
               <div className="absolute inset-0 bg-gradient-to-r from-neon-green/10 to-electric-blue/10 rounded-2xl" />
               
               <div className="relative z-10">
-                <h3 className="text-2xl font-semibold mb-6 text-white">
+                <h3 className="text-2xl font-semibold mb-6 text-white text-center">
                   Join the Waitlist
                 </h3>
                 
@@ -221,79 +223,6 @@ export const SignupSection: React.FC = () => {
                 </p>
               </div>
             </div>
-          </motion.div>
-
-          {/* Benefits Section */}
-          <motion.div
-            initial={{ opacity: 0, x: 50 }}
-            animate={inView ? { opacity: 1, x: 0 } : {}}
-            transition={{ duration: 0.8, delay: 0.4 }}
-            className="space-y-8"
-          >
-            {/* Trial Benefits */}
-            <div>
-              <h4 className="text-xl font-semibold text-white mb-4">
-                What's Included in Your Free Trial:
-              </h4>
-              <ul className="space-y-3">
-                {[
-                  "Access to 50+ hands-on labs",
-                  "Weekly CTF challenges", 
-                  "Community forum access",
-                  "Basic certification prep",
-                  "Progress tracking dashboard"
-                ].map((benefit, index) => (
-                  <motion.li
-                    key={index}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={inView ? { opacity: 1, x: 0 } : {}}
-                    transition={{ duration: 0.5, delay: 0.6 + index * 0.1 }}
-                    className="flex items-center space-x-3"
-                  >
-                    <CheckCircle className="w-5 h-5 text-neon-green flex-shrink-0" />
-                    <span className="text-gray-300">{benefit}</span>
-                  </motion.li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Security Badges */}
-            <div>
-              <h4 className="text-lg font-semibold text-white mb-4">
-                Your Data is Secure:
-              </h4>
-              <div className="grid grid-cols-1 gap-3">
-                {securityFeatures.map((feature, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={inView ? { opacity: 1, y: 0 } : {}}
-                    transition={{ duration: 0.5, delay: 0.8 + index * 0.1 }}
-                    className="flex items-center space-x-3 p-3 bg-dark-secondary border border-gray-border rounded-lg"
-                  >
-                    <div className="text-neon-green">
-                      {feature.icon}
-                    </div>
-                    <span className="text-gray-300 text-sm">{feature.text}</span>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-
-            {/* Trust Indicators */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={inView ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.5, delay: 1.2 }}
-              className="text-center p-6 bg-gradient-to-r from-neon-green/10 to-electric-blue/10 rounded-lg border border-gray-border"
-            >
-              <div className="text-2xl font-bold text-neon-green mb-2">
-                30-Day Money Back Guarantee
-              </div>
-              <p className="text-gray-300 text-sm">
-                Not satisfied? Get a full refund, no questions asked.
-              </p>
-            </motion.div>
           </motion.div>
         </div>
       </div>

@@ -256,7 +256,8 @@ export default function CertificationsPage() {
           </div>
         </section>
 
-        {/* Why Choose HackCubes Section */}
+        {/* Why Choose HackCubes Section - commented out per request */}
+        {/*
         <section className="px-4 py-16 bg-dark-secondary/30">
           <div className="max-w-6xl mx-auto text-center">
             <motion.h2
@@ -319,6 +320,7 @@ export default function CertificationsPage() {
             </div>
           </div>
         </section>
+        */}
 
         {/* Pricing Section */}
         <PricingSection />

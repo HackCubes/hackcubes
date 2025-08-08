@@ -167,8 +167,8 @@ export const TestimonialsSection: React.FC = () => {
           ))}
         </div>
 
-        {/* Trust Badges */}
-        <motion.div
+        {/* Trust Badges - Commented out compliance badges per request */}
+        {/* <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={inView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.8, delay: 0.5 }}
@@ -186,7 +186,7 @@ export const TestimonialsSection: React.FC = () => {
               </div>
             </div>
           ))}
-        </motion.div>
+        </motion.div> */}
       </div>
     </section>
   );
