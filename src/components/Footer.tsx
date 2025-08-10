@@ -82,10 +82,10 @@ export const Footer: React.FC = () => {
                 <span>+1 (555) 123-4567</span>
               </div>
               */}
-              <div className="flex items-center space-x-3">
+              {/* <div className="flex items-center space-x-3">
                 <MapPin size={16} className="text-neon-green" />
                 <span>San Francisco, CA</span>
-              </div>
+              </div> */}
             </div>
           </div>
 
