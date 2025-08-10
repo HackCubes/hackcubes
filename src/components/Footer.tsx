@@ -2,10 +2,10 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { HackCubesLogo } from './icons/HackCubesLogo';
 import { 
-  Github, 
+  // Github, 
   Twitter, 
   Linkedin, 
-  Youtube, 
+  // Youtube, 
   Mail, 
   Phone, 
   MapPin,
@@ -19,10 +19,10 @@ export const Footer: React.FC = () => {
   };
 
   const socialLinks = [
-    { icon: <Github size={20} />, href: '#', label: 'GitHub' },
+    // { icon: <Github size={20} />, href: '#', label: 'GitHub' },
     { icon: <Twitter size={20} />, href: 'https://x.com/hackcubes', label: 'Twitter' },
     { icon: <Linkedin size={20} />, href: 'https://www.linkedin.com/company/hackcubes', label: 'LinkedIn' },
-    { icon: <Youtube size={20} />, href: '#', label: 'YouTube' },
+    // { icon: <Youtube size={20} />, href: '#', label: 'YouTube' },
   ];
 
   const quickLinks = [

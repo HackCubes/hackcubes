@@ -256,11 +256,11 @@ export const Certificate: React.FC<CertificateProps> = ({
               <div className="text-gray-400 text-xs">hackcubes.com/verify</div>
             </div>
 
-            {/* Right - ISO */}
+            {/* Right - Authority */}
             <div className="text-right">
-              <div className="text-gray-400 mb-1">STANDARD</div>
-              <div className="font-bold text-electric-blue text-sm">ISO 27001</div>
-              <div className="text-gray-400">CERTIFIED</div>
+              <div className="text-gray-400 mb-1">AUTHORITY</div>
+              <div className="font-bold text-electric-blue text-sm">CERTIFIED</div>
+              <div className="text-gray-400">HACKCUBES</div>
             </div>
           </motion.div>
         </div>

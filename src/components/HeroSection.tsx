@@ -58,7 +58,7 @@ export const HeroSection: React.FC = () => {
           transition={{ duration: 1, delay: 0.5, ease: "easeOut" }}
           className="text-xl md:text-2xl mb-4 text-green-300"
         >
-          First 10 hackers get a free entry-level cert. Early adopters: $99 per cert.
+          Top 10 giveaway winners get a free entry-level cert. Early adopters: $99 per cert.
         </motion.p>
 
         {/* Subheading */}

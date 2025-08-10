@@ -18,7 +18,7 @@ export default function LandingPage() {
 
   // Countdown timer logic
   useEffect(() => {
-    const targetDate = new Date('2025-08-20'); // Launch date: August 20th, 2025
+    const targetDate = new Date('2025-08-27'); // Launch date: August 27th, 2025
     
     const timer = setInterval(() => {
       const now = new Date().getTime();
@@ -75,7 +75,7 @@ export default function LandingPage() {
         <section className="bg-red-900 border-y-2 border-red-500 py-4 relative z-20">
           <div className="container mx-auto px-4 text-center">
             <div className="flex flex-col md:flex-row items-center justify-center gap-4">
-              <span className="text-lg font-bold">⏰ Only 10 free certs available! Early bird price: $99 USD</span>
+              <span className="text-lg font-bold">⏰ Top 10 giveaway winners get free certs! Early bird price: $99 USD</span>
               <div className="flex gap-4 text-xl font-bold animate-pulse">
                 <span className="bg-red-800 px-2 py-1 rounded">{timeLeft.days}d</span>
                 <span className="bg-red-800 px-2 py-1 rounded">{timeLeft.hours}h</span>
@@ -156,9 +156,9 @@ export default function LandingPage() {
                 viewport={{ once: true }}
                 className="border border-yellow-500 p-8 rounded-lg bg-yellow-500/10 hover:bg-yellow-500/20 transition-all duration-300"
               >
-                <h3 className="text-2xl font-bold mb-4 text-yellow-400">🎯 First 10 Hackers</h3>
+                <h3 className="text-2xl font-bold mb-4 text-yellow-400">🎯 Top 10 Giveaway Winners</h3>
                 <p className="text-3xl mb-4 font-bold text-white">FREE Certification</p>
-                <p className="text-gray-300">Complete any cybersecurity challenge and earn your first official cert at absolutely no cost!</p>
+                <p className="text-gray-300">Selected winners from our launch giveaways will receive their first official cert at absolutely no cost!</p>
               </motion.div>
               <motion.div 
                 initial={{ opacity: 0, x: 50 }}
