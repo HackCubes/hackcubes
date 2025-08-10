@@ -36,7 +36,7 @@ export const SignupSection: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/waitlist', {
+      const res = await fetch('/api/early-joiners', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -47,7 +47,7 @@ export const SignupSection: React.FC = () => {
         setFormData({ name: '', email: '' });
         setTimeout(() => setIsSubmitted(false), 3000);
       } else {
-        setError(result.error || 'Failed to join waitlist.');
+        setError(result.error || 'Failed to join.');
       }
     } catch (err) {
       setError('Something went wrong. Please try again.');
