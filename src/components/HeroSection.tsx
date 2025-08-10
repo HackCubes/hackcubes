@@ -58,7 +58,7 @@ export const HeroSection: React.FC = () => {
           transition={{ duration: 1, delay: 0.5, ease: "easeOut" }}
           className="text-xl md:text-2xl mb-4 text-green-300"
         >
-          Top 10 giveaway winners get a free entry-level cert. Early adopters: $99 per cert.
+          Complete our CTF by launch date for a chance to win - 10 random participants get free HCJPT Cert.
         </motion.p>
 
         {/* Subheading */}
