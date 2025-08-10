@@ -243,7 +243,7 @@ export const Certificate: React.FC<CertificateProps> = ({
             className="flex justify-between items-end text-xs"
           >
             {/* Left - Authority */}
-            <div className="text-left">
+            <div className="text-left mb-2">
               <div className="text-gray-400 mb-1">ISSUED BY</div>
               <div className="font-bold text-neon-green text-sm">HACKCUBES</div>
               <div className="text-gray-400">Cyber Authority</div>
@@ -257,7 +257,7 @@ export const Certificate: React.FC<CertificateProps> = ({
             </div>
 
             {/* Right - Authority */}
-            <div className="text-right">
+            <div className="text-right mb-2">
               <div className="text-gray-400 mb-1">AUTHORITY</div>
               <div className="font-bold text-electric-blue text-sm">CERTIFIED</div>
               <div className="text-gray-400">HACKCUBES</div>
