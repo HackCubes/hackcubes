@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createServiceClient } from '@supabase/supabase-js';
+import { emailService } from '@/lib/email/service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,6 +31,12 @@ export async function POST(request: NextRequest) {
       console.error('Supabase error (early_joiners insert):', error);
       return NextResponse.json({ error: 'Failed to join' }, { status: 500 });
     }
+
+    // Send welcome email asynchronously (don't block the response)
+    emailService.sendEarlyJoinerWelcome(entry.email, entry.name).catch(emailError => {
+      console.error('Failed to send welcome email:', emailError);
+      // Don't fail the signup if email fails
+    });
 
     return NextResponse.json(
       { message: 'Successfully joined', data: entry },

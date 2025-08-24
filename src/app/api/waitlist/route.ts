@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createServiceClient } from '@supabase/supabase-js';
 import { WaitlistSignupData } from '@/types/waitlist';
+import { emailService } from '@/lib/email/service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -109,6 +110,12 @@ export async function POST(request: NextRequest) {
       console.error('Error updating invite code:', updateError);
       // Don't fail the whole operation, just log it
     }
+
+    // Send waitlist confirmation email asynchronously (don't block the response)
+    emailService.sendWaitlistConfirmation(waitlistEntry.email, waitlistEntry.name).catch(emailError => {
+      console.error('Failed to send waitlist confirmation email:', emailError);
+      // Don't fail the signup if email fails
+    });
 
     return NextResponse.json(
       { 

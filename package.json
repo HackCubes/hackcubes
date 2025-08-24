@@ -11,22 +11,27 @@
     "setup:supabase": "node setup-supabase.js",
     "setup:database": "node setup-database.js",
     "test:supabase": "node test-supabase.js",
-    "test:api": "node test-api.js"
+    "test:api": "node test-api.js",
+    "test:email": "node test-email.js",
+    "test:email-templates": "node test-email.js templates"
   },
   "dependencies": {
     "@react-three/drei": "^9.105.0",
     "@react-three/fiber": "^8.16.0",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.4",
+    "@types/nodemailer": "^6.4.17",
     "dotenv": "^17.2.1",
     "framer-motion": "^10.16.4",
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.1",
     "lucide-react": "^0.292.0",
     "next": "14.2.5",
+    "nodemailer": "^7.0.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-intersection-observer": "^9.5.2",
+    "resend": "^6.0.1",
     "sharp": "^0.34.3",
     "three": "^0.166.1"
   },
