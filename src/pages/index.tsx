@@ -77,12 +77,7 @@ export default function LandingPage() {
     }
   };
 
-  const navigation = [
-    // { name: 'Features', href: '#features' },
-    // { name: 'Challenges', href: '#challenges' },
-    // { name: 'Pricing', href: '#pricing' },
-    // { name: 'About', href: '#about' },
-  ];
+  const navigation: { name: string; href: string }[] = [];
 
   return (
     <div className="relative min-h-screen bg-dark-bg text-white overflow-x-hidden">
