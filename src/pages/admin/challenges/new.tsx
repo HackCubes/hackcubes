@@ -1,0 +1,614 @@
+'use client';
+
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { 
+  Save, 
+  X, 
+  Plus, 
+  Trash2, 
+  Eye, 
+  EyeOff, 
+  Upload,
+  ArrowLeft,
+  Target,
+  Flag,
+  Code,
+  HelpCircle
+} from 'lucide-react';
+import AdminLayout from '@/components/AdminLayout';
+import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/router';
+import Link from 'next/link';
+import { toast } from 'sonner';
+
+interface FormData {
+  question_text: string;
+  description: string;
+  type: string;
+  points: number;
+  difficulty: string;
+  tags: string[];
+  hints: string[];
+  source_code: string;
+  instance_type: string;
+  docker_image: string;
+  flags: Array<{
+    value: string;
+    points: number;
+    is_case_sensitive: boolean;
+    hint: string;
+  }>;
+}
+
+export default function NewChallenge() {
+  const [formData, setFormData] = useState<FormData>({
+    question_text: '',
+    description: '',
+    type: 'web',
+    points: 100,
+    difficulty: 'easy',
+    tags: [],
+    hints: [],
+    source_code: '',
+    instance_type: 'docker',
+    docker_image: '',
+    flags: [{ value: '', points: 100, is_case_sensitive: true, hint: '' }]
+  });
+  const [currentTag, setCurrentTag] = useState('');
+  const [currentHint, setCurrentHint] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [selectedAssessment, setSelectedAssessment] = useState('');
+  const [selectedSection, setSelectedSection] = useState('');
+  const [assessments, setAssessments] = useState<any[]>([]);
+  const [sections, setSections] = useState<any[]>([]);
+  const [showSourceCode, setShowSourceCode] = useState(false);
+  
+  const router = useRouter();
+  const supabase = createClient();
+
+  const challengeTypes = [
+    { value: 'web', label: 'Web Exploitation' },
+    { value: 'pwn', label: 'Binary Exploitation' },
+    { value: 'crypto', label: 'Cryptography' },
+    { value: 'forensics', label: 'Forensics' },
+    { value: 'reverse', label: 'Reverse Engineering' },
+    { value: 'misc', label: 'Miscellaneous' },
+    { value: 'osint', label: 'OSINT' },
+    { value: 'steganography', label: 'Steganography' }
+  ];
+
+  const difficulties = [
+    { value: 'easy', label: 'Easy', color: 'text-green-400' },
+    { value: 'medium', label: 'Medium', color: 'text-yellow-400' },
+    { value: 'hard', label: 'Hard', color: 'text-red-400' }
+  ];
+
+  const handleInputChange = (field: keyof FormData, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const addTag = () => {
+    if (currentTag.trim() && !formData.tags.includes(currentTag.trim())) {
+      handleInputChange('tags', [...formData.tags, currentTag.trim()]);
+      setCurrentTag('');
+    }
+  };
+
+  const removeTag = (index: number) => {
+    handleInputChange('tags', formData.tags.filter((_, i) => i !== index));
+  };
+
+  const addHint = () => {
+    if (currentHint.trim()) {
+      handleInputChange('hints', [...formData.hints, currentHint.trim()]);
+      setCurrentHint('');
+    }
+  };
+
+  const removeHint = (index: number) => {
+    handleInputChange('hints', formData.hints.filter((_, i) => i !== index));
+  };
+
+  const addFlag = () => {
+    handleInputChange('flags', [
+      ...formData.flags,
+      { value: '', points: 100, is_case_sensitive: true, hint: '' }
+    ]);
+  };
+
+  const updateFlag = (index: number, field: string, value: any) => {
+    const updatedFlags = formData.flags.map((flag, i) => 
+      i === index ? { ...flag, [field]: value } : flag
+    );
+    handleInputChange('flags', updatedFlags);
+  };
+
+  const removeFlag = (index: number) => {
+    if (formData.flags.length > 1) {
+      handleInputChange('flags', formData.flags.filter((_, i) => i !== index));
+    }
+  };
+
+  const validateForm = () => {
+    if (!formData.question_text.trim()) {
+      toast.error('Challenge title is required');
+      return false;
+    }
+    if (!formData.description.trim()) {
+      toast.error('Challenge description is required');
+      return false;
+    }
+    if (!selectedSection) {
+      toast.error('Please select a section');
+      return false;
+    }
+    if (formData.flags.some(flag => !flag.value.trim())) {
+      toast.error('All flags must have a value');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSave = async () => {
+    if (!validateForm()) return;
+
+    setSaving(true);
+    try {
+      // Create the question
+      const { data: question, error: questionError } = await supabase
+        .from('questions')
+        .insert({
+          section_id: selectedSection,
+          type: formData.type,
+          question_text: formData.question_text,
+          description: formData.description,
+          points: formData.points,
+          difficulty: formData.difficulty,
+          tags: formData.tags,
+          hints: formData.hints,
+          source_code: formData.source_code,
+          instance_type: formData.instance_type,
+          docker_image: formData.docker_image
+        })
+        .select()
+        .single();
+
+      if (questionError) throw questionError;
+
+      // Create the flags
+      for (const flag of formData.flags) {
+        const { error: flagError } = await supabase
+          .from('flags')
+          .insert({
+            question_id: question.id,
+            value: flag.value,
+            points: flag.points,
+            is_case_sensitive: flag.is_case_sensitive,
+            hint: flag.hint
+          });
+
+        if (flagError) throw flagError;
+      }
+
+      toast.success('Challenge created successfully!');
+      router.push('/admin/challenges');
+
+    } catch (error) {
+      console.error('Error creating challenge:', error);
+      toast.error('Failed to create challenge. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <AdminLayout currentPage="new-challenge">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <Link
+              href="/admin/challenges"
+              className="mr-4 p-2 text-gray-400 hover:text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+            <div>
+              <h1 className="text-3xl font-bold text-white">Create New Challenge</h1>
+              <p className="text-gray-400 mt-1">Add a new CTF challenge to your platform</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => router.push('/admin/challenges')}
+              className="px-4 py-2 border border-gray-border text-gray-300 rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white font-semibold rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200 disabled:opacity-50"
+            >
+              {saving ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              {saving ? 'Creating...' : 'Create Challenge'}
+            </button>
+          </div>
+        </div>
+
+        {/* Form */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Content */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Basic Information */}
+            <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
+              <h2 className="text-xl font-bold text-white mb-4 flex items-center">
+                <Target className="h-5 w-5 mr-2 text-red-400" />
+                Basic Information
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Challenge Title
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.question_text}
+                    onChange={(e) => handleInputChange('question_text', e.target.value)}
+                    placeholder="Enter challenge title..."
+                    className="w-full px-4 py-3 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Description
+                  </label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) => handleInputChange('description', e.target.value)}
+                    placeholder="Describe the challenge, what users need to find, and any important details..."
+                    rows={4}
+                    className="w-full px-4 py-3 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Type
+                    </label>
+                    <select
+                      value={formData.type}
+                      onChange={(e) => handleInputChange('type', e.target.value)}
+                      className="w-full px-4 py-3 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
+                    >
+                      {challengeTypes.map(type => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Difficulty
+                    </label>
+                    <select
+                      value={formData.difficulty}
+                      onChange={(e) => handleInputChange('difficulty', e.target.value)}
+                      className="w-full px-4 py-3 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
+                    >
+                      {difficulties.map(diff => (
+                        <option key={diff.value} value={diff.value}>
+                          {diff.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Points
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.points}
+                      onChange={(e) => handleInputChange('points', parseInt(e.target.value) || 0)}
+                      min="1"
+                      max="1000"
+                      className="w-full px-4 py-3 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Flags */}
+            <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
+              <h2 className="text-xl font-bold text-white mb-4 flex items-center">
+                <Flag className="h-5 w-5 mr-2 text-yellow-400" />
+                Flags
+              </h2>
+              
+              <div className="space-y-4">
+                {formData.flags.map((flag, index) => (
+                  <div key={index} className="border border-gray-border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-lg font-semibold text-white">Flag {index + 1}</h3>
+                      {formData.flags.length > 1 && (
+                        <button
+                          onClick={() => removeFlag(index)}
+                          className="text-red-400 hover:text-red-300 p-1"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Flag Value
+                        </label>
+                        <input
+                          type="text"
+                          value={flag.value}
+                          onChange={(e) => updateFlag(index, 'value', e.target.value)}
+                          placeholder="flag{example_flag}"
+                          className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Points
+                        </label>
+                        <input
+                          type="number"
+                          value={flag.points}
+                          onChange={(e) => updateFlag(index, 'points', parseInt(e.target.value) || 0)}
+                          min="1"
+                          className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="mt-4">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={flag.is_case_sensitive}
+                          onChange={(e) => updateFlag(index, 'is_case_sensitive', e.target.checked)}
+                          className="rounded border-gray-border bg-dark-bg text-red-600 focus:ring-red-500"
+                        />
+                        <span className="ml-2 text-sm text-gray-300">Case sensitive</span>
+                      </label>
+                    </div>
+                    
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Hint (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={flag.hint}
+                        onChange={(e) => updateFlag(index, 'hint', e.target.value)}
+                        placeholder="Optional hint for this flag"
+                        className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                      />
+                    </div>
+                  </div>
+                ))}
+                
+                <button
+                  onClick={addFlag}
+                  className="flex items-center px-4 py-2 border border-gray-border text-gray-300 rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Another Flag
+                </button>
+              </div>
+            </div>
+
+            {/* Source Code */}
+            <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-white flex items-center">
+                  <Code className="h-5 w-5 mr-2 text-blue-400" />
+                  Source Code (Optional)
+                </h2>
+                <button
+                  onClick={() => setShowSourceCode(!showSourceCode)}
+                  className="flex items-center text-gray-400 hover:text-white"
+                >
+                  {showSourceCode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              
+              {showSourceCode && (
+                <div>
+                  <textarea
+                    value={formData.source_code}
+                    onChange={(e) => handleInputChange('source_code', e.target.value)}
+                    placeholder="Paste any relevant source code, configuration files, or code snippets..."
+                    rows={8}
+                    className="w-full px-4 py-3 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500 font-mono text-sm"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Assignment */}
+            <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
+              <h3 className="text-lg font-bold text-white mb-4">Assignment</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Assessment
+                  </label>
+                  <select
+                    value={selectedAssessment}
+                    onChange={(e) => setSelectedAssessment(e.target.value)}
+                    className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
+                  >
+                    <option value="">Select Assessment</option>
+                    {/* This would be populated from the database */}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Section
+                  </label>
+                  <select
+                    value={selectedSection}
+                    onChange={(e) => setSelectedSection(e.target.value)}
+                    className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
+                  >
+                    <option value="">Select Section</option>
+                    {/* This would be populated based on selected assessment */}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Tags */}
+            <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
+              <h3 className="text-lg font-bold text-white mb-4">Tags</h3>
+              
+              <div className="space-y-3">
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={currentTag}
+                    onChange={(e) => setCurrentTag(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && addTag()}
+                    placeholder="Add tag..."
+                    className="flex-1 px-3 py-2 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                  />
+                  <button
+                    onClick={addTag}
+                    className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                  {formData.tags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="flex items-center px-2 py-1 bg-gray-700 text-gray-300 text-sm rounded"
+                    >
+                      {tag}
+                      <button
+                        onClick={() => removeTag(index)}
+                        className="ml-1 text-gray-400 hover:text-white"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Hints */}
+            <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center">
+                <HelpCircle className="h-4 w-4 mr-2 text-blue-400" />
+                Hints
+              </h3>
+              
+              <div className="space-y-3">
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={currentHint}
+                    onChange={(e) => setCurrentHint(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && addHint()}
+                    placeholder="Add hint..."
+                    className="flex-1 px-3 py-2 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                  />
+                  <button
+                    onClick={addHint}
+                    className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+                
+                <div className="space-y-2">
+                  {formData.hints.map((hint, index) => (
+                    <div
+                      key={index}
+                      className="flex items-start justify-between p-2 bg-dark-bg border border-gray-border rounded"
+                    >
+                      <span className="text-sm text-gray-300 flex-1">{hint}</span>
+                      <button
+                        onClick={() => removeHint(index)}
+                        className="ml-2 text-gray-400 hover:text-white"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Infrastructure */}
+            <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
+              <h3 className="text-lg font-bold text-white mb-4">Infrastructure</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Instance Type
+                  </label>
+                  <select
+                    value={formData.instance_type}
+                    onChange={(e) => handleInputChange('instance_type', e.target.value)}
+                    className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
+                  >
+                    <option value="none">No Instance</option>
+                    <option value="docker">Docker Container</option>
+                    <option value="vm">Virtual Machine</option>
+                  </select>
+                </div>
+                
+                {formData.instance_type === 'docker' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Docker Image
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.docker_image}
+                      onChange={(e) => handleInputChange('docker_image', e.target.value)}
+                      placeholder="ubuntu:latest"
+                      className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+}

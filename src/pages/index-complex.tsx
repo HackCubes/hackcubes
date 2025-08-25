@@ -24,11 +24,11 @@ import {
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/router';
-import { CubeBackground } from '@/components/CubeBackground';
-import { HeroSection } from '@/components/HeroSection';
-import { TestimonialsSection } from '@/components/TestimonialsSection';
-import { SignupSection } from '@/components/SignupSection';
-import { Footer } from '@/components/Footer';
+// import { CubeBackground } from '@/components/CubeBackground';
+// import { HeroSection } from '@/components/HeroSection';
+// import { TestimonialsSection } from '@/components/TestimonialsSection';
+// import { SignupSection } from '@/components/SignupSection';
+// import { Footer } from '@/components/Footer';
 
 export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -78,10 +78,10 @@ export default function LandingPage() {
   };
 
   const navigation = [
-    // { name: 'Features', href: '#features' },
-    // { name: 'Challenges', href: '#challenges' },
-    // { name: 'Pricing', href: '#pricing' },
-    // { name: 'About', href: '#about' },
+    { name: 'Features', href: '#features' },
+    { name: 'Challenges', href: '#challenges' },
+    { name: 'Pricing', href: '#pricing' },
+    { name: 'About', href: '#about' },
   ];
 
   return (
@@ -127,22 +127,9 @@ export default function LandingPage() {
                   >
                     Admin
                   </Link>
-                  <button
-                    onClick={async () => { await supabase.auth.signOut(); router.push('/'); }}
-                    className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium border border-gray-700"
-                  >
-                    Logout
-                  </button>
                 </>
               ) : (
                 <>
-                  <Link
-                    href="/auth/admin-signin"
-                    className="flex items-center text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium"
-                  >
-                    <Shield className="h-4 w-4 mr-1" />
-                    Admin
-                  </Link>
                   <Link
                     href="/auth/signin"
                     className="flex items-center text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium"
@@ -211,12 +198,6 @@ export default function LandingPage() {
                       >
                         Admin
                       </Link>
-                      <button
-                        onClick={async () => { await supabase.auth.signOut(); router.push('/'); }}
-                        className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium mx-3 mt-2 text-center border border-gray-700"
-                      >
-                        Logout
-                      </button>
                     </>
                   ) : (
                     <>
@@ -242,7 +223,7 @@ export default function LandingPage() {
       </nav>
 
       {/* 3D Cube Background */}
-      <CubeBackground />
+      {/* <CubeBackground /> */}
       
       {/* Parallax Background Elements */}
       <div className="fixed inset-0 pointer-events-none z-0">
@@ -266,7 +247,11 @@ export default function LandingPage() {
         className="relative z-10"
       >
         {/* 1. Hero / Hook Section */}
-        <HeroSection />
+        {/* <HeroSection /> */}
+        <div className="text-center py-20">
+          <h1 className="text-5xl font-bold text-white mb-4">HackCubes CTF Platform</h1>
+          <p className="text-xl text-gray-300">Temporary homepage - components being fixed</p>
+        </div>
 
         {/* 2. Countdown + Scarcity Banner */}
         <section className="bg-red-900 border-y-2 border-red-500 py-4 relative z-20">
@@ -440,13 +425,13 @@ export default function LandingPage() {
         </section>
 
         {/* Testimonials Section - Restored */}
-        <TestimonialsSection />
+        {/* <TestimonialsSection /> */}
 
         {/* Signup Section - Restored */}
-        <SignupSection />
+        {/* <SignupSection /> */}
 
         {/* Footer - Replace simple footer with full Footer component */}
-        <Footer />
+        {/* <Footer /> */}
       </motion.div>
     </div>
   );

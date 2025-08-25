@@ -13,7 +13,8 @@
     "test:supabase": "node test-supabase.js",
     "test:api": "node test-api.js",
     "test:email": "node test-email.js",
-    "test:email-templates": "node test-email.js templates"
+    "test:email-templates": "node test-email.js templates",
+    "seed:admin": "node scripts/seed-admin.js"
   },
   "dependencies": {
     "@react-three/drei": "^9.105.0",
@@ -21,6 +22,7 @@
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.4",
     "@types/nodemailer": "^6.4.17",
+    "chart.js": "^4.5.0",
     "dotenv": "^17.2.1",
     "framer-motion": "^10.16.4",
     "html2canvas": "^1.4.1",
@@ -29,11 +31,14 @@
     "next": "14.2.5",
     "nodemailer": "^7.0.5",
     "react": "^18.2.0",
+    "react-chartjs-2": "^5.3.0",
     "react-dom": "^18.2.0",
     "react-intersection-observer": "^9.5.2",
     "resend": "^6.0.1",
     "sharp": "^0.34.3",
-    "three": "^0.166.1"
+    "sonner": "^2.0.7",
+    "three": "^0.166.1",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.8.10",
