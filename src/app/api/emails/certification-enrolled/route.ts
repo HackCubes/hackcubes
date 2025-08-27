@@ -18,7 +18,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    // Prefer explicit env var, else derive from request headers (works on Vercel/proxies)
+    const proto = request.headers.get('x-forwarded-proto') || 'https';
+    const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
+    const derivedOrigin = host ? `${proto}://${host}` : undefined;
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || derivedOrigin || 'http://localhost:3000';
 
     const prettyName =
       certificationCode === 'HCJPT'
