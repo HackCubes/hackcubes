@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, Mail, Lock, User, Github, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { createClient } from '@/lib/supabase/client';
@@ -83,8 +83,7 @@ export default function SignUpPage() {
             last_name: formData.lastName,
             username: formData.username,
           },
-          // Ensure the verification link redirects back to our app
-          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
+          // If Supabase email confirmations are disabled, no default email will be sent.
         }
       });
 
@@ -93,15 +92,15 @@ export default function SignUpPage() {
         return;
       }
 
-      // Fire-and-forget personalized verification helper email (regardless of user presence)
-      fetch('/api/emails/signup-verification', {
+      // Fire-and-forget personalized verification email with secure action link
+      fetch('/api/auth/send-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: formData.email,
           name: `${formData.firstName} ${formData.lastName}`.trim(),
         }),
-      }).catch((err) => console.warn('signup verification email error', err));
+      }).catch((err) => console.warn('send-verification email error', err));
 
       // Create profile only if user object is available (may be null when email confirmation is required)
       if (authData.user) {
@@ -139,24 +138,6 @@ export default function SignUpPage() {
       toast.error('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleGitHubSignUp = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'github',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`
-        }
-      });
-
-      if (error) {
-        toast.error(error.message);
-      }
-    } catch (error) {
-      console.error('GitHub sign up error:', error);
-      toast.error('Failed to sign up with GitHub');
     }
   };
 
@@ -319,28 +300,6 @@ export default function SignUpPage() {
                   <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
                 </>
               )}
-            </button>
-          </div>
-
-          {/* Divider */}
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-600" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-dark-bg text-gray-400">Or continue with</span>
-            </div>
-          </div>
-
-          {/* GitHub Sign Up */}
-          <div>
-            <button
-              type="button"
-              onClick={handleGitHubSignUp}
-              className="group relative w-full flex justify-center py-3 px-4 border border-gray-600 text-sm font-medium rounded-lg text-white bg-gray-800 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200"
-            >
-              <Github className="mr-2 h-4 w-4" />
-              Sign up with GitHub
             </button>
           </div>
 

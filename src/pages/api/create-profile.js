@@ -24,10 +24,10 @@ export default async function handler(req, res) {
       }
     );
 
-    // Create profile with admin privileges
+    // Upsert profile to avoid duplicate key errors on retries
     const { data, error } = await supabaseAdmin
       .from('profiles')
-      .insert([
+      .upsert([
         {
           id: userId,
           email: email,
@@ -35,15 +35,16 @@ export default async function handler(req, res) {
           last_name: lastName,
           username: username,
         }
-      ])
-      .select();
+      ], { onConflict: 'id', ignoreDuplicates: true })
+      .select()
+      .maybeSingle();
 
     if (error) {
-      console.error('Profile creation error:', error);
+      console.error('Profile upsert error:', error);
       return res.status(500).json({ error: 'Failed to create profile', details: error });
     }
 
-    return res.status(200).json({ success: true, profile: data[0] });
+    return res.status(200).json({ success: true, profile: data || { id: userId, email, first_name: firstName, last_name: lastName, username } });
   } catch (error) {
     console.error('API error:', error);
     return res.status(500).json({ error: 'Internal server error' });

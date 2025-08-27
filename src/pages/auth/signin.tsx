@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, Mail, Lock, LogIn, Github, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, LogIn, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { createClient } from '@/lib/supabase/client';
@@ -68,24 +68,6 @@ export default function SignInPage() {
     }
   };
 
-  const handleGitHubSignIn = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'github',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`
-        }
-      });
-
-      if (error) {
-        toast.error(error.message);
-      }
-    } catch (error) {
-      console.error('GitHub sign in error:', error);
-      toast.error('Failed to sign in with GitHub');
-    }
-  };
-
   const handleForgotPassword = async () => {
     if (!formData.email.trim()) {
       toast.error('Please enter your email address first');
@@ -105,16 +87,6 @@ export default function SignInPage() {
     } catch (error) {
       console.error('Password reset error:', error);
       toast.error('Failed to send reset email');
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-      toast.success('Signed out');
-      router.push('/');
-    } catch (e) {
-      toast.error('Failed to sign out');
     }
   };
 
@@ -231,35 +203,6 @@ export default function SignInPage() {
                   <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
                 </>
               )}
-            </button>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="mt-3 w-full py-2 text-sm text-gray-300 hover:text-white border border-gray-700 rounded-lg"
-            >
-              Logout
-            </button>
-          </div>
-
-          {/* Divider */}
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-600" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-dark-bg text-gray-400">Or continue with</span>
-            </div>
-          </div>
-
-          {/* GitHub Sign In */}
-          <div>
-            <button
-              type="button"
-              onClick={handleGitHubSignIn}
-              className="group relative w-full flex justify-center py-3 px-4 border border-gray-600 text-sm font-medium rounded-lg text-white bg-gray-800 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200"
-            >
-              <Github className="mr-2 h-4 w-4" />
-              Sign in with GitHub
             </button>
           </div>
 
