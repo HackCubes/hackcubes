@@ -82,7 +82,9 @@ export default function SignUpPage() {
             first_name: formData.firstName,
             last_name: formData.lastName,
             username: formData.username,
-          }
+          },
+          // Ensure the verification link redirects back to our app
+          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
         }
       });
 
@@ -91,8 +93,18 @@ export default function SignUpPage() {
         return;
       }
 
+      // Fire-and-forget personalized verification helper email (regardless of user presence)
+      fetch('/api/emails/signup-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.email,
+          name: `${formData.firstName} ${formData.lastName}`.trim(),
+        }),
+      }).catch((err) => console.warn('signup verification email error', err));
+
+      // Create profile only if user object is available (may be null when email confirmation is required)
       if (authData.user) {
-        // Create profile using API route (with service role)
         try {
           const profileResponse = await fetch('/api/create-profile', {
             method: 'POST',
@@ -111,28 +123,17 @@ export default function SignUpPage() {
           if (!profileResponse.ok) {
             const profileError = await profileResponse.json();
             console.error('Profile creation error:', profileError);
-            // Don't block the flow, just log the error
           } else {
             console.log('✅ Profile created successfully');
           }
         } catch (profileError) {
           console.error('Profile creation error:', profileError);
-          // Don't block the flow, just log the error
         }
-
-        // Fire-and-forget personalized verification helper email
-        fetch('/api/emails/signup-verification', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: formData.email,
-            name: `${formData.firstName} ${formData.lastName}`.trim(),
-          }),
-        }).catch((err) => console.warn('signup verification email error', err));
-
-        toast.success('Account created successfully! Please check your email to verify your account.');
-        router.push('/auth/signin?message=Please check your email to verify your account');
       }
+
+      // Notify and redirect even when user is null (email verification pending)
+      toast.success('Account created! Please check your email to verify your account.');
+      router.push('/auth/signin?message=Please check your email to verify your account');
     } catch (error) {
       console.error('Sign up error:', error);
       toast.error('An unexpected error occurred. Please try again.');
