@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, Target, Flag, Play, Info, ArrowRight, Calendar, Trophy, BookOpen } from 'lucide-react';
+import { Clock, Target, Flag, Play, Info, ArrowRight, Calendar, Trophy, BookOpen, RotateCcw } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import { toast } from 'sonner';
+
+const USE_INVITATIONS = process.env.NEXT_PUBLIC_USE_INVITATIONS === 'true';
 
 interface Assessment {
   id: string;
@@ -34,20 +37,28 @@ interface Enrollment {
 }
 
 interface Props {
-  assessmentId: string;
+  // This component gets assessmentId from router.query, not props
 }
 
-export default function AssessmentWelcomePage({ assessmentId }: Props) {
+export default function AssessmentWelcomePage() {
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  const [existingSubmission, setExistingSubmission] = useState<any>(null);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [hasCompletedSubmission, setHasCompletedSubmission] = useState(false);
   const router = useRouter();
+  const { id: assessmentId } = router.query;
   const supabase = createClient();
 
   useEffect(() => {
-    const fetchData = async () => {
+    let isMounted = true;
+
+    const validateAccess = async () => {
+      // Wait for router to be ready and assessmentId to be available
+      if (!router.isReady || !assessmentId || typeof assessmentId !== 'string') return;
+      
       try {
         // Check authentication
         const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -55,7 +66,56 @@ export default function AssessmentWelcomePage({ assessmentId }: Props) {
           router.push('/auth/signin');
           return;
         }
+        
+        if (!isMounted) return;
         setUser(user);
+
+        // Check if user has an invitation for this assessment
+        const { data: invitationData, error: invitationError } = await supabase
+          .from('assessment_invitations')
+          .select('id, status, invited_at')
+          .eq('assessment_id', assessmentId)
+          .eq('email', user.email)
+          .single();
+
+        if (!isMounted) return;
+
+        if (invitationError || !invitationData) {
+          console.error('No invitation found:', invitationError);
+          // If no invitation found, check if we have an old enrollment (fallback)
+          const { data: enrollmentData } = await supabase
+            .from('enrollments')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('assessment_id', assessmentId)
+            .single();
+            
+          if (!enrollmentData) {
+            router.push('/challenges');
+            return;
+          }
+          setEnrollment(enrollmentData);
+        } else {
+          // Check for existing submission
+          const { data: submissionData } = await supabase
+            .from('submissions')
+            .select('id, status, started_at, expires_at, current_score, progress_percentage')
+            .eq('assessment_id', assessmentId)
+            .eq('candidate_id', user.id)
+            .single();
+
+          if (submissionData) {
+            if (submissionData.status === 'COMPLETED') {
+              // Do not auto-redirect here to avoid potential redirect loops with results page
+              // Instead, show a View Results action in the UI
+              setHasCompletedSubmission(true);
+            }
+            // For STARTED status, allow user to choose: continue or restart
+            if (submissionData.status === 'STARTED') {
+              setExistingSubmission(submissionData);
+            }
+          }
+        }
 
         // Fetch assessment details
         const { data: assessmentData, error: assessmentError } = await supabase
@@ -64,88 +124,249 @@ export default function AssessmentWelcomePage({ assessmentId }: Props) {
           .eq('id', assessmentId)
           .single();
 
-        if (assessmentError) {
-          console.error('Assessment fetch error:', assessmentError);
+        if (!isMounted) return;
+
+        if (assessmentError || !assessmentData) {
+          console.error('Assessment not found:', assessmentError);
           router.push('/challenges');
           return;
         }
 
         setAssessment(assessmentData);
 
-        // Check if user is enrolled
-        const { data: enrollmentData, error: enrollmentError } = await supabase
-          .from('enrollments')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('assessment_id', assessmentId)
-          .single();
-
-        if (enrollmentError && enrollmentError.code !== 'PGRST116') {
-          console.error('Enrollment fetch error:', enrollmentError);
-        } else if (enrollmentData) {
-          setEnrollment(enrollmentData);
-
-          // If already started, redirect to questions
-          if (enrollmentData.status === 'IN_PROGRESS') {
-            router.push(`/assessments/${assessmentId}/questions`);
-            return;
-          }
-        }
-
       } catch (error) {
         console.error('Error fetching data:', error);
+        if (isMounted) {
+          router.push('/challenges');
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchData();
-  }, [assessmentId, router, supabase]);
+    validateAccess();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [assessmentId, router.isReady, supabase, router]);
 
   const handleStartAssessment = async () => {
-    if (!user || !assessment) return;
+    if (!user || !assessment) {
+      toast.error('Please sign in to start the assessment');
+      return;
+    }
 
     setStarting(true);
     try {
-      let enrollmentId = enrollment?.id;
+      // First, check if user has a valid invitation
+      const { data: invitation, error: invitationError } = await supabase
+        .from('assessment_invitations')
+        .select('id, status')
+        .eq('assessment_id', assessment.id)
+        .eq('email', user.email)
+        .single();
 
-      if (!enrollment) {
-        // Create new enrollment
-        const { data: newEnrollment, error: createError } = await supabase
-          .from('enrollments')
-          .insert([
-            {
+      if (invitationError || !invitation) {
+        console.log('No invitation found, creating direct enrollment...');
+        
+        // Fallback: Create direct enrollment for testing
+        let enrollmentId = enrollment?.id;
+
+        if (!enrollmentId) {
+          const { data: newEnrollment, error: createError } = await supabase
+            .from('enrollments')
+            .insert([{
               user_id: user.id,
-              assessment_id: assessmentId,
+              assessment_id: assessment.id,
               status: 'ENROLLED',
-              expires_at: new Date(Date.now() + assessment.duration_in_minutes * 60 * 1000).toISOString(),
-              max_possible_score: assessment.max_score
-            }
-          ])
-          .select()
-          .single();
+              expires_at: new Date(Date.now() + (assessment.duration_in_minutes || 60) * 60 * 1000).toISOString(),
+              max_possible_score: assessment.max_score || 0,
+            }])
+            .select()
+            .single();
 
-        if (createError) throw createError;
-        enrollmentId = newEnrollment.id;
+          if (createError) {
+            // Check if enrollment already exists
+            const { data: existingEnrollment } = await supabase
+              .from('enrollments')
+              .select('*')
+              .eq('user_id', user.id)
+              .eq('assessment_id', assessment.id)
+              .single();
+              
+            if (existingEnrollment) {
+              enrollmentId = existingEnrollment.id;
+            } else {
+              throw new Error('Failed to create enrollment');
+            }
+          } else {
+            enrollmentId = newEnrollment.id;
+          }
+        }
+
+        // Update enrollment to IN_PROGRESS
+        const { error: updateError } = await supabase
+          .from('enrollments')
+          .update({ 
+            status: 'IN_PROGRESS', 
+            started_at: new Date().toISOString(),
+            expires_at: new Date(Date.now() + (assessment.duration_in_minutes || 60) * 60 * 1000).toISOString()
+          })
+          .eq('id', enrollmentId);
+
+        if (updateError) {
+          console.warn('Could not update enrollment:', updateError);
+        }
+
+        // Navigate to questions page
+        await router.push(`/assessments/${assessment.id}/questions`);
+        return;
       }
 
-      // Update enrollment to IN_PROGRESS
-      const { error: updateError } = await supabase
-        .from('enrollments')
-        .update({ 
-          status: 'IN_PROGRESS',
-          started_at: new Date().toISOString()
-        })
-        .eq('id', enrollmentId);
+      // Modern flow: Use invitations and submissions system
+      if (!['pending', 'accepted'].includes(invitation.status)) {
+        throw new Error('This assessment invitation is no longer valid');
+      }
 
-      if (updateError) throw updateError;
+      // Update invitation status to accepted
+      const { error: updateInvitationError } = await supabase
+        .from('assessment_invitations')
+        .update({ status: 'accepted' })
+        .eq('id', invitation.id);
 
-      // Navigate to questions
-      router.push(`/assessments/${assessmentId}/questions`);
+      if (updateInvitationError) {
+        console.warn('Could not update invitation status:', updateInvitationError);
+      }
 
-    } catch (error) {
+      // Check for existing submission
+      const { data: existingSubmission, error: submissionQueryError } = await supabase
+        .from('submissions')
+        .select('id, status')
+        .eq('assessment_id', assessment.id)
+        .eq('candidate_id', user.id)
+        .single();
+
+      if (existingSubmission) {
+        if (existingSubmission.status === 'STARTED') {
+          // Already started, go to questions
+          await router.push(`/assessments/${assessment.id}/questions`);
+          return;
+        }
+        
+        // Update existing submission
+        const { error: updateError } = await supabase
+          .from('submissions')
+          .update({
+            status: 'STARTED',
+            started_at: new Date().toISOString(),
+            expires_at: new Date(Date.now() + (assessment.duration_in_minutes || 60) * 60 * 1000).toISOString()
+          })
+          .eq('id', existingSubmission.id);
+
+        if (updateError) {
+          throw new Error('Failed to update submission');
+        }
+      } else {
+        // Create new submission
+        const expiryTime = new Date();
+        expiryTime.setMinutes(expiryTime.getMinutes() + assessment.duration_in_minutes);
+
+        const { error: insertError } = await supabase
+          .from('submissions')
+          .insert({
+            assessment_id: assessment.id,
+            candidate_id: user.id,
+            invitation_id: invitation.id,
+            status: 'STARTED',
+            type: 'CTF',
+            progress_percentage: 0.0,
+            expires_at: expiryTime.toISOString(),
+            started_at: new Date().toISOString()
+          });
+
+        if (insertError) {
+          throw new Error('Failed to create submission');
+        }
+      }
+
+      // Navigate to questions page
+      await router.push(`/assessments/${assessment.id}/questions`);
+      
+    } catch (error: any) {
       console.error('Error starting assessment:', error);
+      toast.error(error.message || 'Failed to start assessment');
     } finally {
+      setStarting(false);
+    }
+  };
+
+  const handleRestartAssessment = async () => {
+    if (!user || !assessment) {
+      toast.error('Please sign in to restart the assessment');
+      return;
+    }
+
+    setStarting(true);
+    try {
+      // Delete any existing submissions to truly restart
+      const { error: deleteError } = await supabase
+        .from('submissions')
+        .delete()
+        .eq('assessment_id', assessment.id)
+        .eq('candidate_id', user.id);
+
+      if (deleteError) {
+        console.warn('Could not delete existing submissions:', deleteError);
+      }
+
+      // Reset enrollment status and scores
+      const { error: resetEnrollmentError } = await supabase
+        .from('enrollments')
+        .update({
+          status: 'ENROLLED',
+          started_at: null,
+          completed_at: null,
+          expires_at: null,
+          final_score: 0,
+          current_score: 0,
+          progress_percentage: 0
+        })
+        .eq('user_id', user.id)
+        .eq('assessment_id', assessment.id);
+
+      if (resetEnrollmentError) {
+        console.warn('Could not reset enrollment:', resetEnrollmentError);
+      }
+
+      // Clear localStorage submissions for this assessment
+      const localSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
+      Object.keys(localSubmissions).forEach(key => {
+        delete localSubmissions[key];
+      });
+      localStorage.setItem('flag_submissions', JSON.stringify(localSubmissions));
+
+      // Clear user flag submissions
+      const { error: clearFlagSubmissionsError } = await supabase
+        .from('user_flag_submissions')
+        .delete()
+        .in('enrollment_id', [enrollment?.id].filter(Boolean));
+
+      if (clearFlagSubmissionsError) {
+        console.warn('Could not clear flag submissions:', clearFlagSubmissionsError);
+      }
+
+      // Clear the existing submission state
+      setExistingSubmission(null);
+
+      // Now start fresh
+      await handleStartAssessment();
+      
+    } catch (error: any) {
+      console.error('Error restarting assessment:', error);
+      toast.error(error.message || 'Failed to restart assessment');
       setStarting(false);
     }
   };
@@ -365,18 +586,37 @@ export default function AssessmentWelcomePage({ assessmentId }: Props) {
               <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
                 <h3 className="text-lg font-bold text-white mb-4">Ready to Start?</h3>
                 
-                {enrollment?.status === 'COMPLETED' ? (
-                  <div className="text-center">
-                    <div className="text-green-400 text-2xl font-bold mb-2">
-                      {enrollment.current_score}/{assessment.max_score}
-                    </div>
-                    <p className="text-gray-400 text-sm mb-4">Assessment Completed</p>
+                {enrollment?.status === 'COMPLETED' || hasCompletedSubmission ? (
+                  <div className="text-center space-y-3">
+                    {/* If enrollment is available use its score display; otherwise just offer results link */}
+                    {enrollment?.status === 'COMPLETED' && (
+                      <>
+                        <div className="text-green-400 text-2xl font-bold mb-2">
+                          {enrollment.current_score}/{assessment.max_score}
+                        </div>
+                        <p className="text-gray-400 text-sm">Assessment Completed</p>
+                      </>
+                    )}
                     <Link 
                       href={`/assessments/${assessmentId}/results`}
                       className="w-full inline-flex items-center justify-center px-4 py-3 bg-dark-bg border border-gray-border text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors"
                     >
                       View Results
                     </Link>
+                    <button
+                      onClick={handleRestartAssessment}
+                      disabled={starting}
+                      className="w-full flex items-center justify-center px-4 py-3 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 transition-all duration-200 disabled:opacity-50"
+                    >
+                      {starting ? (
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <>
+                          <RotateCcw className="h-5 w-5 mr-2" />
+                          Start Over
+                        </>
+                      )}
+                    </button>
                   </div>
                 ) : isExpired() || isNotStarted() ? (
                   <div className="text-center">
@@ -389,20 +629,54 @@ export default function AssessmentWelcomePage({ assessmentId }: Props) {
                   </div>
                 ) : (
                   <div className="text-center">
-                    <button
-                      onClick={handleStartAssessment}
-                      disabled={starting}
-                      className="w-full flex items-center justify-center px-4 py-3 bg-gradient-to-r from-neon-green to-electric-blue text-dark-bg font-semibold rounded-lg hover:from-green-500 hover:to-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {starting ? (
-                        <div className="w-5 h-5 border-2 border-dark-bg border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <>
+                    {existingSubmission ? (
+                      <div className="space-y-3">
+                        <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-4">
+                          <h4 className="text-blue-200 font-semibold mb-2">Assessment In Progress</h4>
+                          <p className="text-blue-300 text-sm mb-3">
+                            You have already started this assessment on {new Date(existingSubmission.started_at).toLocaleDateString()}.
+                          </p>
+                        </div>
+                        
+                        <button
+                          onClick={() => router.push(`/assessments/${assessmentId}/questions`)}
+                          className="w-full flex items-center justify-center px-4 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white font-semibold rounded-lg hover:from-green-600 hover:to-blue-600 transition-all duration-200 mb-2"
+                        >
                           <Play className="h-5 w-5 mr-2" />
-                          Start Assessment
-                        </>
-                      )}
-                    </button>
+                          Continue Assessment
+                        </button>
+                        
+                        <button
+                          onClick={handleRestartAssessment}
+                          disabled={starting}
+                          className="w-full flex items-center justify-center px-4 py-3 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 transition-all duration-200 disabled:opacity-50"
+                        >
+                          {starting ? (
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <>
+                              <RotateCcw className="h-5 w-5 mr-2" />
+                              Start Over
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleStartAssessment}
+                        disabled={starting}
+                        className="w-full flex items-center justify-center px-4 py-3 bg-gradient-to-r from-neon-green to-electric-blue text-dark-bg font-semibold rounded-lg hover:from-green-500 hover:to-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {starting ? (
+                          <div className="w-5 h-5 border-2 border-dark-bg border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <Play className="h-5 w-5 mr-2" />
+                            Start Assessment
+                          </>
+                        )}
+                      </button>
+                    )}
                     
                     {enrollment && (
                       <p className="text-gray-400 text-xs mt-2">

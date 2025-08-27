@@ -48,8 +48,8 @@ interface Enrollment {
 
 interface Question {
   id: string;
-  question_text: string;
-  points: number;
+  description: string;
+  score: number;
   difficulty: string;
 }
 
@@ -74,10 +74,11 @@ export default function AssessmentResultsPage() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showDetailedResults, setShowDetailedResults] = useState(false);
+  const [submissionCompleted, setSubmissionCompleted] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!assessmentId || typeof assessmentId !== 'string') return;
+      if (!router.isReady || !assessmentId || typeof assessmentId !== 'string') return;
 
       try {
         // Check authentication
@@ -88,7 +89,7 @@ export default function AssessmentResultsPage() {
         }
         setUser(user);
 
-        // Check enrollment
+        // Check enrollment first
         const { data: enrollmentData, error: enrollmentError } = await supabase
           .from('enrollments')
           .select('*')
@@ -96,11 +97,25 @@ export default function AssessmentResultsPage() {
           .eq('assessment_id', assessmentId)
           .single();
 
-        if (enrollmentError || !enrollmentData || enrollmentData.status !== 'COMPLETED') {
-          router.push(`/assessments/${assessmentId}`);
-          return;
+        if (!enrollmentError && enrollmentData && enrollmentData.status === 'COMPLETED') {
+          setEnrollment(enrollmentData);
+        } else {
+          // If enrollment isn't completed (or missing), check if a submission is completed
+          const { data: submissionRow } = await supabase
+            .from('submissions')
+            .select('status')
+            .eq('assessment_id', assessmentId)
+            .eq('candidate_id', user.id)
+            .single();
+
+          if (submissionRow?.status === 'COMPLETED') {
+            // Allow results to render; we will derive scores from user_flag_submissions
+            setSubmissionCompleted(true);
+          } else {
+            router.push(`/assessments/${assessmentId}`);
+            return;
+          }
         }
-        setEnrollment(enrollmentData);
 
         // Fetch assessment
         const { data: assessmentData } = await supabase
@@ -120,15 +135,28 @@ export default function AssessmentResultsPage() {
           .from('questions')
           .select('*')
           .in('section_id', (sectionsData || []).map(s => s.id))
-          .order('order_in_section');
+          .order('order_index');
         setQuestions(questionsData || []);
 
-        // Fetch submissions
-        const { data: submissionsData } = await supabase
-          .from('user_flag_submissions')
-          .select('*')
-          .eq('enrollment_id', enrollmentData.id);
-        setSubmissions(submissionsData || []);
+        // Fetch submissions (user's flag submissions)
+        let fetchedSubmissions: any[] = [];
+        if (enrollmentData?.id) {
+          const { data: subsData } = await supabase
+            .from('user_flag_submissions')
+            .select('*')
+            .eq('enrollment_id', enrollmentData.id);
+          fetchedSubmissions = subsData || [];
+        } else {
+          // Fallback to localStorage when enrollment isn't available yet
+          try {
+            const raw = typeof window !== 'undefined' ? localStorage.getItem('flag_submissions') : null;
+            const parsed = raw ? JSON.parse(raw) : {};
+            fetchedSubmissions = Array.isArray(parsed) ? parsed : Object.values(parsed || {});
+          } catch (e) {
+            fetchedSubmissions = [];
+          }
+        }
+        setSubmissions(fetchedSubmissions as any);
 
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -138,13 +166,13 @@ export default function AssessmentResultsPage() {
     };
 
     fetchData();
-  }, [assessmentId, router, supabase]);
+  }, [assessmentId, router.isReady, supabase]);
 
-  const getPerformanceLevel = () => {
-    if (!assessment || !enrollment) return { level: 'Needs Improvement', color: 'text-red-400' };
-    
-    const percentage = (enrollment.final_score / assessment.max_score) * 100;
-    
+  const totalPointsAwarded = submissions.reduce((sum, s) => sum + (s.points_awarded || 0), 0);
+
+  const getPerformanceLevel = (score: number) => {
+    if (!assessment) return { level: 'Needs Improvement', color: 'text-red-400' };
+    const percentage = assessment.max_score > 0 ? (score / assessment.max_score) * 100 : 0;
     if (percentage >= 90) return { level: 'Excellent', color: 'text-green-400' };
     if (percentage >= 80) return { level: 'Very Good', color: 'text-blue-400' };
     if (percentage >= 70) return { level: 'Good', color: 'text-yellow-400' };
@@ -155,8 +183,7 @@ export default function AssessmentResultsPage() {
   const getDetailedStats = () => {
     const correctAnswers = submissions.filter(s => s.is_correct).length;
     const incorrectAnswers = submissions.filter(s => !s.is_correct && s.submitted_answer).length;
-    const unanswered = questions.length - submissions.length;
-
+    const unanswered = Math.max(0, questions.length - submissions.length);
     return { correctAnswers, incorrectAnswers, unanswered };
   };
 
@@ -178,7 +205,7 @@ export default function AssessmentResultsPage() {
     if (navigator.share) {
       await navigator.share({
         title: `My ${assessment?.name} Results`,
-        text: `I just completed ${assessment?.name} and scored ${enrollment?.final_score}/${assessment?.max_score} points!`,
+        text: `I just completed ${assessment?.name} and scored ${displayedFinalScore}/${assessment?.max_score} points!`,
         url: window.location.href,
       });
     } else {
@@ -199,7 +226,7 @@ export default function AssessmentResultsPage() {
     );
   }
 
-  if (!assessment || !enrollment) {
+  if (!assessment) {
     return (
       <div className="min-h-screen bg-dark-bg flex items-center justify-center">
         <div className="text-center">
@@ -212,11 +239,17 @@ export default function AssessmentResultsPage() {
     );
   }
 
-  const performanceLevel = getPerformanceLevel();
   const { correctAnswers, incorrectAnswers, unanswered } = getDetailedStats();
-  const percentage = (enrollment.final_score / assessment.max_score) * 100;
-  const timeTaken = enrollment.time_taken_minutes || 
-    Math.round((new Date(enrollment.completed_at).getTime() - new Date(enrollment.started_at).getTime()) / 60000);
+  const displayedFinalScore = enrollment?.final_score ?? totalPointsAwarded;
+  const performanceLevel = getPerformanceLevel(displayedFinalScore);
+  const percentage = assessment.max_score > 0 ? (displayedFinalScore / assessment.max_score) * 100 : 0;
+  const hasPassed = percentage >= 60;
+  const displayedProgress = enrollment?.progress_percentage ?? (questions.length > 0 ? (correctAnswers / questions.length) * 100 : 0);
+  const timeTaken = enrollment?.time_taken_minutes ?? (
+    enrollment?.started_at && enrollment?.completed_at
+      ? Math.round((new Date(enrollment.completed_at).getTime() - new Date(enrollment.started_at).getTime()) / 60000)
+      : 0
+  );
 
   const chartData = {
     labels: ['Correct', 'Incorrect', 'Unanswered'],
@@ -288,10 +321,10 @@ export default function AssessmentResultsPage() {
             <div className="bg-dark-secondary border border-gray-border rounded-lg p-6 text-center">
               <div className="mb-4">
                 <div className="text-4xl font-bold text-white mb-2">
-                  {enrollment.final_score}<span className="text-2xl text-gray-400">/{assessment.max_score}</span>
+                  {displayedFinalScore}<span className="text-2xl text-gray-400">/{assessment.max_score}</span>
                 </div>
-                <div className="text-2xl font-semibold text-neon-green">
-                  {percentage.toFixed(1)}%
+                <div className={`text-2xl font-semibold ${hasPassed ? 'text-green-400' : 'text-red-400'}`}>
+                  {percentage.toFixed(1)}% ({hasPassed ? 'Pass' : 'Fail'})
                 </div>
               </div>
               <div className={`text-lg font-semibold ${performanceLevel.color}`}>
@@ -327,7 +360,7 @@ export default function AssessmentResultsPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-gray-400">Completion:</span>
-                  <span className="text-white font-semibold">{enrollment.progress_percentage.toFixed(1)}%</span>
+                  <span className="text-white font-semibold">{displayedProgress.toFixed(1)}%</span>
                 </div>
               </div>
             </div>
@@ -350,6 +383,14 @@ export default function AssessmentResultsPage() {
               <Share2 className="h-5 w-5 mr-2" />
               Share Results
             </button>
+            
+            <Link
+              href={`/assessments/${router.query.id}`}
+              className="flex items-center px-6 py-3 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 transition-all duration-200"
+            >
+              <Trophy className="h-5 w-5 mr-2" />
+              Retake Assessment
+            </Link>
             
             <button
               onClick={() => setShowDetailedResults(!showDetailedResults)}
@@ -411,12 +452,12 @@ export default function AssessmentResultsPage() {
                         </div>
                         <div className="flex items-center space-x-2">
                           <span className="text-gray-400 text-sm">
-                            {submission?.points_awarded || 0}/{question.points} pts
+                            {submission?.points_awarded || 0}/{question.score} pts
                           </span>
                         </div>
                       </div>
                       
-                      <p className="text-gray-300 mb-2">{question.question_text}</p>
+                      <p className="text-gray-300 mb-2">{question.description}</p>
                       
                       {submission && (
                         <div className="text-sm">

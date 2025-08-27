@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { User, Trophy, Target, Calendar, BookOpen, Zap, TrendingUp, Flag } from 'lucide-react';
+import { User, Trophy, Target, Calendar, BookOpen, Zap, TrendingUp, Flag, BadgeCheck } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
@@ -42,6 +42,8 @@ export default function Dashboard() {
   const [recentChallenges, setRecentChallenges] = useState<RecentChallenge[]>([]);
   const [ongoingAssessments, setOngoingAssessments] = useState<OngoingAssessment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasVoucher, setHasVoucher] = useState(false);
+  const HJCPT_ASSESSMENT_ID = '533d4e96-fe35-4540-9798-162b3f261572';
   const router = useRouter();
   const supabase = createClient();
 
@@ -154,6 +156,16 @@ export default function Dashboard() {
           setOngoingAssessments(formattedOngoing);
         }
 
+        // Check voucher (assessment_invitations accepted)
+        if (user) {
+          const { data: invitation } = await supabase
+            .from('assessment_invitations')
+            .select('id, status')
+            .eq('assessment_id', HJCPT_ASSESSMENT_ID)
+            .eq('email', user.email)
+            .single();
+          setHasVoucher(!!invitation && invitation.status === 'accepted');
+        }
       } catch (error) {
         console.error('Error fetching user data:', error);
       } finally {
@@ -432,6 +444,41 @@ export default function Dashboard() {
           </motion.div>
         </div>
 
+        {/* Certifications */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, delay: 0.25 }}
+          className="bg-dark-secondary border border-gray-border rounded-lg p-6 mt-8"
+        >
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-white flex items-center">
+              <BadgeCheck className="h-5 w-5 mr-2 text-purple-400" />
+              Certifications
+            </h2>
+            <Link href="/certifications" className="text-neon-green hover:text-electric-blue text-sm">
+              View
+            </Link>
+          </div>
+
+          <div className="border border-gray-border rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-white text-sm">HJCPT Exam</h3>
+                <p className="text-xs text-gray-400 mt-1">
+                  {hasVoucher ? 'You are enrolled. Voucher active.' : 'Not enrolled. Buy or ask admin to enroll.'}
+                </p>
+              </div>
+              <Link
+                href={hasVoucher ? `/assessments/${HJCPT_ASSESSMENT_ID}` : '/certifications'}
+                className={`text-sm font-medium ${hasVoucher ? 'text-neon-green hover:text-electric-blue' : 'text-gray-300 hover:text-white'}`}
+              >
+                {hasVoucher ? 'Start/Continue' : 'Learn more'} →
+              </Link>
+            </div>
+          </div>
+        </motion.div>
+
         {/* Quick Actions */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -457,7 +504,7 @@ export default function Dashboard() {
               </div>
             </Link>
 
-            <Link href="/certification" className="group">
+            <Link href="/certifications" className="group">
               <div className="bg-dark-secondary border border-gray-border rounded-lg p-6 hover:border-purple-400 transition-colors">
                 <Trophy className="h-8 w-8 text-purple-400 mb-4" />
                 <h3 className="font-semibold text-white mb-2">Certifications</h3>

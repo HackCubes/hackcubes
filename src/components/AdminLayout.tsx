@@ -38,6 +38,7 @@ const navigation = [
   { name: 'Dashboard', href: '/admin', icon: Home, current: false },
   { name: 'Challenges', href: '/admin/challenges', icon: Target, current: false },
   { name: 'Assessments', href: '/admin/assessments', icon: BookOpen, current: false },
+  { name: 'Certifications', href: '/admin/certifications', icon: Shield, current: false },
   { name: 'Users', href: '/admin/users', icon: Users, current: false },
   { name: 'Analytics', href: '/admin/analytics', icon: BarChart3, current: false },
   { name: 'Leaderboard', href: '/admin/leaderboard', icon: Trophy, current: false },

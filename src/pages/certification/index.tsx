@@ -1,13 +1,23 @@
-import React from 'react';
+'use client';
+
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { Shield, Clock, Trophy, DollarSign, ChevronRight, Star } from 'lucide-react';
 import { CubeBackground } from '@/components/CubeBackground';
 import { Footer } from '@/components/Footer';
 import { HackCubesLogo } from '@/components/icons/HackCubesLogo';
 import { PricingSection } from '@/components/PricingSection';
+import { createClient } from '@/lib/supabase/client';
 
 export default function CertificationsPage() {
+  const supabase = createClient();
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+  const [hasVoucher, setHasVoucher] = useState(false);
+  const HJCPT_ASSESSMENT_ID = '533d4e96-fe35-4540-9798-162b3f261572';
+
   const certifications = [
     {
       id: 'hcjpt',
@@ -90,8 +100,59 @@ export default function CertificationsPage() {
     return 'bg-gray-500/20 text-gray-300';
   };
 
+  useEffect(() => {
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return; // allow viewing page without redirect
+      setUser(user);
+      const { data: invitation } = await supabase
+        .from('assessment_invitations')
+        .select('id, status')
+        .eq('assessment_id', HJCPT_ASSESSMENT_ID)
+        .eq('email', user.email)
+        .single();
+      setHasVoucher(!!invitation && invitation.status === 'accepted');
+    };
+    init();
+  }, [supabase]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/');
+  };
+
   return (
     <div className="relative min-h-screen bg-dark-bg text-white overflow-x-hidden">
+      {/* Navigation */}
+      <nav className="bg-dark-secondary border-b border-gray-border">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <Link href="/" className="text-2xl font-bold text-neon-green">
+                HackCubes
+              </Link>
+            </div>
+            <div className="flex items-center space-x-4">
+              <Link href="/challenges" className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
+                Challenges
+              </Link>
+              <Link href="/learning-paths" className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
+                Learning Paths
+              </Link>
+              <Link href="/leaderboard" className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
+                Leaderboard
+              </Link>
+              <Link href="/profile" className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
+                Profile
+              </Link>
+              <button onClick={handleLogout} className="ml-2 text-gray-300 hover:text-white px-3 py-2 border border-gray-700 rounded-md text-sm font-medium">
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
       {/* 3D Cube Background */}
       <CubeBackground />
       
@@ -171,7 +232,12 @@ export default function CertificationsPage() {
                           </span>
                         </div>
                       </div>
-                      {cert.comingSoon && (
+                      {cert.id === 'hcjpt' && hasVoucher && (
+                        <span className="px-3 py-1 bg-neon-green/20 text-neon-green text-sm rounded-full">
+                          Active
+                        </span>
+                      )}
+                      {!hasVoucher && cert.comingSoon && (
                         <span className="px-3 py-1 bg-electric-blue/20 text-electric-blue text-sm rounded-full">
                           Coming Soon
                         </span>
@@ -238,12 +304,21 @@ export default function CertificationsPage() {
                     </div>
                     
                     {cert.available ? (
-                      <Link href={cert.link}>
-                        <button className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-neon-green to-green-500 text-dark-bg font-semibold rounded-lg hover:scale-105 transition-all duration-300">
-                          <span>Get Started</span>
-                          <ChevronRight className="w-4 h-4" />
-                        </button>
-                      </Link>
+                      cert.id === 'hcjpt' && hasVoucher ? (
+                        <Link href={`/assessments/${HJCPT_ASSESSMENT_ID}`}>
+                          <button className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-neon-green to-green-500 text-dark-bg font-semibold rounded-lg hover:scale-105 transition-all duration-300">
+                            <span>Start Exam</span>
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </Link>
+                      ) : (
+                        <Link href={cert.link}>
+                          <button className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-neon-green to-green-500 text-dark-bg font-semibold rounded-lg hover:scale-105 transition-all duration-300">
+                            <span>Get Started</span>
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </Link>
+                      )
                     ) : (
                       <button className="flex items-center space-x-2 px-4 py-2 bg-gray-700 text-gray-400 font-semibold rounded-lg cursor-not-allowed">
                         <span>Coming Soon</span>

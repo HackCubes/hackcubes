@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Save, 
@@ -26,7 +26,7 @@ interface FormData {
   question_text: string;
   description: string;
   type: string;
-  points: number;
+  score: number;
   difficulty: string;
   tags: string[];
   hints: string[];
@@ -35,7 +35,7 @@ interface FormData {
   docker_image: string;
   flags: Array<{
     value: string;
-    points: number;
+    score: number;
     is_case_sensitive: boolean;
     hint: string;
   }>;
@@ -46,14 +46,14 @@ export default function NewChallenge() {
     question_text: '',
     description: '',
     type: 'web',
-    points: 100,
+    score: 100,
     difficulty: 'easy',
     tags: [],
     hints: [],
     source_code: '',
     instance_type: 'docker',
     docker_image: '',
-    flags: [{ value: '', points: 100, is_case_sensitive: true, hint: '' }]
+    flags: [{ value: '', score: 100, is_case_sensitive: true, hint: '' }]
   });
   const [currentTag, setCurrentTag] = useState('');
   const [currentHint, setCurrentHint] = useState('');
@@ -66,6 +66,17 @@ export default function NewChallenge() {
   
   const router = useRouter();
   const supabase = createClient();
+
+  // Preselect assessment/section from query if provided
+  useEffect(() => {
+    const { assessment, section } = router.query as { assessment?: string; section?: string };
+    if (assessment && typeof assessment === 'string') {
+      setSelectedAssessment(assessment);
+    }
+    if (section && typeof section === 'string') {
+      setSelectedSection(section);
+    }
+  }, [router.query]);
 
   const challengeTypes = [
     { value: 'web', label: 'Web Exploitation' },
@@ -83,6 +94,47 @@ export default function NewChallenge() {
     { value: 'medium', label: 'Medium', color: 'text-yellow-400' },
     { value: 'hard', label: 'Hard', color: 'text-red-400' }
   ];
+
+  // Load assessments on mount
+  useEffect(() => {
+    const loadAssessments = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('assessments')
+          .select('id, name, status')
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        setAssessments(data || []);
+      } catch (err) {
+        console.error('Failed to load assessments', err);
+        toast.error('Failed to load assessments');
+      }
+    };
+    loadAssessments();
+  }, [supabase]);
+
+  // Load sections when assessment changes
+  useEffect(() => {
+    const loadSections = async () => {
+      try {
+        if (!selectedAssessment) {
+          setSections([]);
+          return;
+        }
+        const { data, error } = await supabase
+          .from('sections')
+          .select('id, name, order_index')
+          .eq('assessment_id', selectedAssessment)
+          .order('order_index');
+        if (error) throw error;
+        setSections(data || []);
+      } catch (err) {
+        console.error('Failed to load sections', err);
+        toast.error('Failed to load sections');
+      }
+    };
+    loadSections();
+  }, [selectedAssessment, supabase]);
 
   const handleInputChange = (field: keyof FormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -113,7 +165,7 @@ export default function NewChallenge() {
   const addFlag = () => {
     handleInputChange('flags', [
       ...formData.flags,
-      { value: '', points: 100, is_case_sensitive: true, hint: '' }
+      { value: '', score: 100, is_case_sensitive: true, hint: '' }
     ]);
   };
 
@@ -155,21 +207,29 @@ export default function NewChallenge() {
 
     setSaving(true);
     try {
-      // Create the question
+      // Determine next order in section
+      const { count: qCount } = await supabase
+        .from('questions')
+        .select('*', { count: 'exact', head: true })
+        .eq('section_id', selectedSection);
+      const nextOrder = qCount || 0;
+
+      // Create the question (mirror name/score for admin listings)
       const { data: question, error: questionError } = await supabase
         .from('questions')
         .insert({
           section_id: selectedSection,
           type: formData.type,
-          question_text: formData.question_text,
+          name: formData.question_text, // Use question_text as name
           description: formData.description,
-          points: formData.points,
+          score: formData.score,
           difficulty: formData.difficulty,
           tags: formData.tags,
           hints: formData.hints,
           source_code: formData.source_code,
           instance_type: formData.instance_type,
-          docker_image: formData.docker_image
+          docker_image: formData.docker_image,
+          order_index: nextOrder
         })
         .select()
         .single();
@@ -183,7 +243,7 @@ export default function NewChallenge() {
           .insert({
             question_id: question.id,
             value: flag.value,
-            points: flag.points,
+            score: flag.score,
             is_case_sensitive: flag.is_case_sensitive,
             hint: flag.hint
           });
@@ -191,8 +251,43 @@ export default function NewChallenge() {
         if (flagError) throw flagError;
       }
 
+      // Recalculate assessment totals
+      let targetAssessmentId = selectedAssessment;
+      if (!targetAssessmentId) {
+        const { data: secRow } = await supabase
+          .from('sections')
+          .select('assessment_id')
+          .eq('id', selectedSection)
+          .single();
+        targetAssessmentId = (secRow as any)?.assessment_id || '';
+      }
+
+      if (targetAssessmentId) {
+        const { data: secIds } = await supabase
+          .from('sections')
+          .select('id')
+          .eq('assessment_id', targetAssessmentId);
+        const sectionIds = (secIds || []).map((s: any) => s.id);
+        if (sectionIds.length > 0) {
+          const { data: qs } = await supabase
+            .from('questions')
+            .select('score, id, section_id')
+            .in('section_id', sectionIds);
+          const totalQ = (qs || []).length;
+          const totalScore = (qs || []).reduce((sum, q: any) => sum + (q.score ?? 0), 0);
+          await supabase
+            .from('assessments')
+            .update({ no_of_questions: totalQ, max_score: totalScore })
+            .eq('id', targetAssessmentId);
+        }
+      }
+
       toast.success('Challenge created successfully!');
-      router.push('/admin/challenges');
+      if (targetAssessmentId) {
+        router.push(`/admin/assessments/${targetAssessmentId}`);
+      } else {
+        router.push('/admin/challenges');
+      }
 
     } catch (error) {
       console.error('Error creating challenge:', error);
@@ -321,8 +416,8 @@ export default function NewChallenge() {
                     </label>
                     <input
                       type="number"
-                      value={formData.points}
-                      onChange={(e) => handleInputChange('points', parseInt(e.target.value) || 0)}
+                      value={formData.score}
+                      onChange={(e) => handleInputChange('score', parseInt(e.target.value) || 0)}
                       min="1"
                       max="1000"
                       className="w-full px-4 py-3 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
@@ -374,8 +469,8 @@ export default function NewChallenge() {
                         </label>
                         <input
                           type="number"
-                          value={flag.points}
-                          onChange={(e) => updateFlag(index, 'points', parseInt(e.target.value) || 0)}
+                          value={flag.score}
+                          onChange={(e) => updateFlag(index, 'score', parseInt(e.target.value) || 0)}
                           min="1"
                           className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
                         />
@@ -461,11 +556,16 @@ export default function NewChallenge() {
                   </label>
                   <select
                     value={selectedAssessment}
-                    onChange={(e) => setSelectedAssessment(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedAssessment(e.target.value);
+                      setSelectedSection('');
+                    }}
                     className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
                   >
                     <option value="">Select Assessment</option>
-                    {/* This would be populated from the database */}
+                    {assessments.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
                   </select>
                 </div>
                 
@@ -479,7 +579,9 @@ export default function NewChallenge() {
                     className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
                   >
                     <option value="">Select Section</option>
-                    {/* This would be populated based on selected assessment */}
+                    {sections.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -508,7 +610,7 @@ export default function NewChallenge() {
                 </div>
                 
                 <div className="flex flex-wrap gap-2">
-                  {formData.tags.map((tag, index) => (
+                  {formData.tags.map((tag: string, index: number) => (
                     <span
                       key={index}
                       className="flex items-center px-2 py-1 bg-gray-700 text-gray-300 text-sm rounded"
@@ -552,7 +654,7 @@ export default function NewChallenge() {
                 </div>
                 
                 <div className="space-y-2">
-                  {formData.hints.map((hint, index) => (
+                  {formData.hints.map((hint: string, index: number) => (
                     <div
                       key={index}
                       className="flex items-start justify-between p-2 bg-dark-bg border border-gray-border rounded"

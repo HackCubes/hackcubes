@@ -77,51 +77,126 @@ export default function ChallengesPage() {
           setCategories(categoriesData);
         }
 
-        // Fetch challenges with related data
-        const { data: challengesData, error: challengesError } = await supabase
-          .from('questions')
-          .select(`
-            id,
-            name,
-            description,
-            category,
-            difficulty,
-            score,
-            no_of_flags,
-            type,
-            tags,
-            is_active,
-            sections (
-              assessments (
+        // Fetch challenges - with fallback if invitation system not set up
+        let challengesData, challengesError;
+        
+        try {
+          // First try to fetch with invitation filtering
+          const { data: invitedChallenges, error: inviteError } = await supabase
+            .from('questions')
+            .select(`
+              id,
+              name,
+              description,
+              category,
+              difficulty,
+              score,
+              no_of_flags,
+              type,
+              tags,
+              is_active,
+              sections!inner (
                 id,
-                name,
-                status,
-                active_from,
-                active_to,
-                duration_in_minutes
+                assessment_id,
+                assessments!inner (
+                  id,
+                  name,
+                  status,
+                  active_from,
+                  active_to,
+                  duration_in_minutes
+                )
               )
-            )
-          `)
-          .eq('is_active', true)
-          .order('created_at', { ascending: false });
+            `)
+            .eq('is_active', true)
+            .eq('sections.assessments.status', 'ACTIVE')
+            .order('created_at', { ascending: false });
 
-        if (challengesData) {
-          const formattedChallenges = challengesData
-            .filter((challenge: any) => 
-              challenge.sections && 
-              challenge.sections.assessments &&
-              challenge.sections.assessments.status === 'ACTIVE'
-            )
-            .map((challenge: any) => ({
+          if (inviteError) throw inviteError;
+
+          // Check if assessment_invitations table exists and filter accordingly
+          const { data: invitationsTest } = await supabase
+            .from('assessment_invitations')
+            .select('id')
+            .limit(1);
+
+          if (invitationsTest !== null) {
+            // Invitation system is set up, filter by invitations
+            const userEmail = user.email;
+            const challengePromises = invitedChallenges.map(async (challenge: any) => {
+              const { data: invitation } = await supabase
+                .from('assessment_invitations')
+                .select('id, status')
+                .eq('assessment_id', challenge.sections.assessments.id)
+                .eq('email', userEmail)
+                .single();
+
+              if (invitation) {
+                return {
+                  ...challenge,
+                  section: {
+                    assessment: challenge.sections.assessments
+                  }
+                };
+              }
+              return null;
+            });
+
+            const resolvedChallenges = await Promise.all(challengePromises);
+            challengesData = resolvedChallenges.filter(Boolean);
+          } else {
+            // Invitation system not set up, show all active challenges
+            challengesData = invitedChallenges.map((challenge: any) => ({
               ...challenge,
               section: {
                 assessment: challenge.sections.assessments
               }
             }));
+          }
           
-          setChallenges(formattedChallenges);
-          setFilteredChallenges(formattedChallenges);
+        } catch (error) {
+          console.log('Invitation filtering failed, showing all challenges:', error);
+          
+          // Fallback: show all active challenges
+          const { data: allChallenges } = await supabase
+            .from('questions')
+            .select(`
+              id,
+              name,
+              description,
+              category,
+              difficulty,
+              score,
+              no_of_flags,
+              type,
+              tags,
+              is_active,
+              sections!inner (
+                id,
+                assessment_id,
+                assessments!inner (
+                  id,
+                  name,
+                  status,
+                  active_from,
+                  active_to,
+                  duration_in_minutes
+                )
+              )
+            `)
+            .eq('is_active', true)
+            .eq('sections.assessments.status', 'ACTIVE');
+
+          challengesData = allChallenges?.map((challenge: any) => ({
+            ...challenge,
+            section: {
+              assessment: challenge.sections.assessments
+            }
+          })) || [];
         }
+
+        setChallenges(challengesData);
+        setFilteredChallenges(challengesData);
 
       } catch (error) {
         console.error('Error fetching challenges:', error);

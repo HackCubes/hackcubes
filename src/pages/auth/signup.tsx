@@ -120,6 +120,16 @@ export default function SignUpPage() {
           // Don't block the flow, just log the error
         }
 
+        // Fire-and-forget personalized verification helper email
+        fetch('/api/emails/signup-verification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: formData.email,
+            name: `${formData.firstName} ${formData.lastName}`.trim(),
+          }),
+        }).catch((err) => console.warn('signup verification email error', err));
+
         toast.success('Account created successfully! Please check your email to verify your account.');
         router.push('/auth/signin?message=Please check your email to verify your account');
       }

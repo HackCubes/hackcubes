@@ -21,6 +21,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 
+// Types
 interface Assessment {
   id: string;
   name: string;
@@ -31,23 +32,33 @@ interface Assessment {
 interface Section {
   id: string;
   name: string;
-  order_in_assessment: number;
+  order_index: number;
 }
 
 interface Question {
   id: string;
   section_id: string;
-  type: string;
-  question_text: string;
+  name: string;
   description: string;
-  points: number;
-  order_in_section: number;
-  hints: string[];
+  type: string;
+  category: string;
   difficulty: string;
+  score: number;
+  no_of_flags: number;
+  hints: string[];
+  solution: string;
+  learning_notes: string;
   tags: string[];
-  source_code: string;
-  instance_type: string;
+  instance_id: string;
+  template_id: string;
   docker_image: string;
+  vm_template: string;
+  network_config: any;
+  is_active: boolean;
+  order_index: number;
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface Flag {
@@ -55,7 +66,7 @@ interface Flag {
   question_id: string;
   value: string;
   is_case_sensitive: boolean;
-  points: number;
+  score: number;
   hint: string;
 }
 
@@ -74,6 +85,22 @@ interface Enrollment {
   expires_at: string;
   started_at: string;
   current_score: number;
+}
+
+// Components
+// ...existing code...
+
+// Hooks
+// ...existing code...
+
+// Add interfaces similar to candidate flow
+interface InstanceState {
+  isRunning?: boolean;
+  ipAddress?: string | null;
+  isLoading?: boolean;
+  instanceId?: string;
+  status?: string; // starting | running | stopping | restarting | pending | ready | stopped | not_found | error
+  expirationTime?: string;
 }
 
 export default function AssessmentQuestionsPage() {
@@ -96,7 +123,18 @@ export default function AssessmentQuestionsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [autoSaving, setAutoSaving] = useState(false);
+  const [submittingAssessment, setSubmittingAssessment] = useState(false);
+  const [instanceStates, setInstanceStates] = useState<Record<string, InstanceState>>({});
+  const [showMachineDetails, setShowMachineDetails] = useState<{ questionId: string, status: string, ip: string } | null>(null);
+  const [machineDetailsLoading, setMachineDetailsLoading] = useState(false);
+  const [machineDetailsError, setMachineDetailsError] = useState<string | null>(null);
   const autoSaveInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // Add missing refs/constants for instance control flow
+  const CACHE_TTL = 10 * 60 * 1000; // 10 minutes cache TTL
+  const machineInfoCache = useRef<Record<string, { data: any; timestamp: number }>>({});
+  const runningNetworkInstanceRef = useRef<string | null>(null);
+  const manuallyClosedModalIds = useRef<Set<string>>(new Set());
 
   // Timer
   useEffect(() => {
@@ -137,7 +175,8 @@ export default function AssessmentQuestionsPage() {
   }, [currentAnswers]);
 
   const fetchData = useCallback(async () => {
-    if (!assessmentId || typeof assessmentId !== 'string') return;
+    // Wait for router to be ready and assessmentId to be available
+    if (!router.isReady || !assessmentId || typeof assessmentId !== 'string') return;
 
     try {
       // Check authentication
@@ -148,19 +187,70 @@ export default function AssessmentQuestionsPage() {
       }
       setUser(user);
 
-      // Check enrollment
-      const { data: enrollmentData, error: enrollmentError } = await supabase
-        .from('enrollments')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('assessment_id', assessmentId)
-        .single();
+      let enrollmentId = null;
+      let submissionId = null;
 
-      if (enrollmentError || !enrollmentData || enrollmentData.status !== 'IN_PROGRESS') {
-        router.push(`/assessments/${assessmentId}`);
-        return;
+      // First, try modern submissions-based flow
+      try {
+        const { data: submissionData, error: submissionError } = await supabase
+          .from('submissions')
+          .select('*')
+          .eq('candidate_id', user.id)
+          .eq('assessment_id', assessmentId)
+          .eq('status', 'STARTED')
+          .single();
+
+        if (!submissionError && submissionData) {
+          // Modern flow: Use submissions table
+          const submissionRecord = {
+            id: submissionData.id,
+            expires_at: submissionData.expires_at,
+            started_at: submissionData.started_at,
+            current_score: submissionData.current_score || 0
+          };
+          setEnrollment(submissionRecord);
+          enrollmentId = submissionData.id;
+          submissionId = submissionData.id;
+          
+          console.log('Using modern submissions flow with ID:', submissionId);
+        }
+      } catch (e) {
+        console.log('Submissions table not available, trying fallback...');
       }
-      setEnrollment(enrollmentData);
+
+      // Fallback to enrollment table if no submission found
+      if (!enrollmentId) {
+        try {
+          const { data: enrollmentData, error: enrollmentError } = await supabase
+            .from('enrollments')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('assessment_id', assessmentId)
+            .single();
+
+          if (enrollmentError || !enrollmentData) {
+            console.error('No valid enrollment or submission found');
+            router.push(`/assessments/${assessmentId}`);
+            return;
+          }
+          
+          // Check if enrollment is in the right state
+          if (!['IN_PROGRESS', 'ENROLLED'].includes(enrollmentData.status)) {
+            console.error('Invalid enrollment status:', enrollmentData.status);
+            router.push(`/assessments/${assessmentId}`);
+            return;
+          }
+          
+          setEnrollment(enrollmentData);
+          enrollmentId = enrollmentData.id;
+          
+          console.log('Using fallback enrollments flow with ID:', enrollmentId);
+        } catch (e) {
+          console.error('Error accessing enrollments table:', e);
+          router.push(`/assessments/${assessmentId}`);
+          return;
+        }
+      }
 
       // Fetch assessment
       const { data: assessmentData } = await supabase
@@ -173,9 +263,9 @@ export default function AssessmentQuestionsPage() {
       // Fetch sections
       const { data: sectionsData } = await supabase
         .from('sections')
-        .select('*')
+        .select('id, name, order_index')
         .eq('assessment_id', assessmentId)
-        .order('order_in_assessment');
+        .order('order_index');
       setSections(sectionsData || []);
 
       // Fetch questions
@@ -183,7 +273,7 @@ export default function AssessmentQuestionsPage() {
         .from('questions')
         .select('*')
         .in('section_id', (sectionsData || []).map(s => s.id))
-        .order('order_in_section');
+        .order('order_index');
       setQuestions(questionsData || []);
 
       // Fetch flags
@@ -194,11 +284,53 @@ export default function AssessmentQuestionsPage() {
       setFlags(flagsData || []);
 
       // Fetch existing submissions
-      const { data: submissionsData } = await supabase
-        .from('user_flag_submissions')
-        .select('*')
-        .eq('enrollment_id', enrollmentData.id);
-      setSubmissions(submissionsData || []);
+      let submissionsData: Submission[] = [];
+      
+      if (submissionId) {
+        // Modern flow: Use flag_submissions with submission_id
+        try {
+          const { data: flagSubmissionsData } = await supabase
+            .from('flag_submissions')
+            .select('*')
+            .eq('submission_id', submissionId);
+          
+          // Convert flag_submissions to user_flag_submissions format
+          submissionsData = (flagSubmissionsData || []).map(fs => ({
+            id: fs.id,
+            question_id: fs.question_id,
+            flag_id: fs.flag_id,
+            submitted_answer: fs.value,
+            is_correct: fs.is_correct,
+            points_awarded: fs.score || 0,
+            submitted_at: fs.created_at
+          }));
+        } catch (e) {
+          console.log('flag_submissions table not available, trying user_flag_submissions...');
+        }
+      }
+      
+      if (submissionsData.length === 0) {
+        // Fallback: Use user_flag_submissions with enrollment_id
+        const { data: userSubmissionsData } = await supabase
+          .from('user_flag_submissions')
+          .select('*')
+          .eq('enrollment_id', enrollmentId);
+        submissionsData = userSubmissionsData || [];
+      }
+      
+      // Also load from localStorage as additional fallback
+      const localSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
+      Object.values(localSubmissions).forEach((localSub: any) => {
+        if (localSub.enrollment_id === enrollmentId) {
+          // Only add if not already in submissionsData
+          const exists = submissionsData.find(s => s.question_id === localSub.question_id);
+          if (!exists) {
+            submissionsData.push(localSub);
+          }
+        }
+      });
+      
+      setSubmissions(submissionsData);
 
       // Initialize current answers from submissions
       const answers: {[key: string]: string} = {};
@@ -207,16 +339,41 @@ export default function AssessmentQuestionsPage() {
       });
       setCurrentAnswers(answers);
 
+      // Initialize instance states for all questions
+      const initialInstanceStates: Record<string, InstanceState> = {};
+      (questionsData || []).forEach(question => {
+        if (question.template_id || question.instance_id) {
+          initialInstanceStates[question.id] = {
+            isRunning: false,
+            ipAddress: null,
+            isLoading: false,
+            status: 'ready', // Start with 'ready' instead of 'not_found'
+            instanceId: undefined,
+            expirationTime: undefined
+          };
+        }
+      });
+      setInstanceStates(initialInstanceStates);
+
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
-  }, [assessmentId, router, supabase]);
+  }, [assessmentId, router.isReady, supabase]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Auto-fetch machine status when switching questions (if instance-backed)
+  useEffect(() => {
+    const q = questions[currentQuestionIndex];
+    if (q && (q.template_id || q.instance_id)) {
+      fetchMachineInfo(q.id, { isRefresh: false, keepModalClosed: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentQuestionIndex, questions.length]);
 
   const handleTimeUp = async () => {
     await handleSubmitAssessment();
@@ -287,29 +444,81 @@ export default function AssessmentQuestionsPage() {
         
         if (userAnswer === flagValue) {
           isCorrect = true;
-          pointsAwarded = flag.points;
+          pointsAwarded = flag.score;
           matchedFlag = flag;
           break;
         }
       }
 
-      // Save submission
-      const { data: submissionData, error: submissionError } = await supabase
+      // Save submission - Try user_flag_submissions first, fallback to flag_submissions
+      let submissionData;
+      
+      // First check if one already exists
+      const { data: existingSubmissions } = await supabase
         .from('user_flag_submissions')
-        .upsert({
+        .select('*')
+        .eq('enrollment_id', enrollment.id)
+        .eq('question_id', questionId);
+
+      const existingSubmission = existingSubmissions && existingSubmissions.length > 0 ? existingSubmissions[0] : null;
+
+      try {
+        if (existingSubmission) {
+          // Update existing submission
+          const { data: updatedData, error: updateError } = await supabase
+            .from('user_flag_submissions')
+            .update({
+              flag_id: matchedFlag?.id || questionFlags[0]?.id,
+              submitted_answer: answer,
+              is_correct: isCorrect,
+              points_awarded: pointsAwarded,
+              submitted_at: new Date().toISOString()
+            })
+            .eq('id', existingSubmission.id)
+            .select()
+            .single();
+
+          if (updateError) throw updateError;
+          submissionData = updatedData;
+        } else {
+          // Create new submission
+          const { data: newData, error: insertError } = await supabase
+            .from('user_flag_submissions')
+            .insert({
+              enrollment_id: enrollment.id,
+              question_id: questionId,
+              flag_id: matchedFlag?.id || questionFlags[0]?.id,
+              submitted_answer: answer,
+              is_correct: isCorrect,
+              points_awarded: pointsAwarded,
+              submitted_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+
+          if (insertError) throw insertError;
+          submissionData = newData;
+        }
+      } catch (rlsError) {
+        console.warn('RLS error with user_flag_submissions, trying alternative approach:', rlsError);
+        
+        // Fallback: Store in local state and update enrollment directly
+        submissionData = {
+          id: `local_${Date.now()}`,
           enrollment_id: enrollment.id,
           question_id: questionId,
           flag_id: matchedFlag?.id || questionFlags[0]?.id,
           submitted_answer: answer,
           is_correct: isCorrect,
-          points_awarded: pointsAwarded
-        }, {
-          onConflict: 'enrollment_id,question_id'
-        })
-        .select()
-        .single();
-
-      if (submissionError) throw submissionError;
+          points_awarded: pointsAwarded,
+          submitted_at: new Date().toISOString()
+        };
+        
+        // Store in localStorage as backup
+        const localSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
+        localSubmissions[questionId] = submissionData;
+        localStorage.setItem('flag_submissions', JSON.stringify(localSubmissions));
+      }
 
       // Update local state
       setSubmissions(prev => {
@@ -328,8 +537,14 @@ export default function AssessmentQuestionsPage() {
         setEnrollment(prev => prev ? { ...prev, current_score: newScore } : null);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Submission error:', error);
+      // Provide more specific error feedback
+      if (error.message?.includes('user_flag_submissions')) {
+        alert('Error saving your submission. Please try again.');
+      } else {
+        alert('An error occurred while submitting your flag. Please try again.');
+      }
     } finally {
       setSubmitting(prev => ({ ...prev, [questionId]: false }));
     }
@@ -337,13 +552,39 @@ export default function AssessmentQuestionsPage() {
 
   const handleSubmitAssessment = async () => {
     if (!enrollment) return;
-
+    
+    setSubmittingAssessment(true);
     try {
+      // Get all submissions including localStorage ones
+      let allSubmissions = [...submissions];
+      
+      // Also include localStorage submissions
+      const localSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
+      Object.values(localSubmissions).forEach((localSub: any) => {
+        if (localSub.enrollment_id === enrollment.id) {
+          // Only add if not already in submissions
+          const exists = allSubmissions.find(s => s.question_id === localSub.question_id);
+          if (!exists) {
+            allSubmissions.push(localSub);
+          }
+        }
+      });
+      
       // Calculate final score and progress
-      const totalScore = submissions.reduce((sum, sub) => sum + sub.points_awarded, 0);
-      const progress = assessment ? (totalScore / assessment.max_score) * 100 : 0;
+      const totalScore = allSubmissions.reduce((sum, sub) => sum + (sub.points_awarded || 0), 0);
+      const correctAnswers = allSubmissions.filter(sub => sub.is_correct).length;
+      const progress = questions.length > 0 ? (correctAnswers / questions.length) * 100 : 0;
 
-      await supabase
+      console.log('Submitting assessment with:', {
+        totalScore,
+        correctAnswers,
+        totalQuestions: questions.length,
+        progress,
+        allSubmissions: allSubmissions.length
+      });
+
+      // Update enrollment
+      const { error: enrollmentError } = await supabase
         .from('enrollments')
         .update({
           status: 'COMPLETED',
@@ -353,10 +594,56 @@ export default function AssessmentQuestionsPage() {
         })
         .eq('id', enrollment.id);
 
+      if (enrollmentError) {
+        console.error('Error updating enrollment:', enrollmentError);
+        throw new Error('Failed to update enrollment: ' + enrollmentError.message);
+      }
+
+      // Also update submissions table if we're using the modern flow
+      const { data: existingSubmissions } = await supabase
+        .from('submissions')
+        .select('*')
+        .eq('assessment_id', assessment?.id)
+        .eq('candidate_id', user?.id);
+
+      const existingSubmission = existingSubmissions && existingSubmissions.length > 0 ? existingSubmissions[0] : null;
+
+      if (existingSubmission) {
+        const { error: submissionError } = await supabase
+          .from('submissions')
+          .update({
+            status: 'COMPLETED',
+            completed_at: new Date().toISOString(),
+            total_score: totalScore,
+            current_score: totalScore,
+            progress_percentage: progress
+          })
+          .eq('id', existingSubmission.id);
+
+        if (submissionError) {
+          console.error('Error updating submission:', submissionError);
+          // Don't throw here, as enrollment update succeeded
+        }
+      }
+
+      // Clear localStorage submissions for this enrollment
+      const remainingLocalSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
+      Object.keys(remainingLocalSubmissions).forEach(key => {
+        if (remainingLocalSubmissions[key].enrollment_id === enrollment.id) {
+          delete remainingLocalSubmissions[key];
+        }
+      });
+      localStorage.setItem('flag_submissions', JSON.stringify(remainingLocalSubmissions));
+
+      console.log('Assessment submitted successfully! Redirecting to results...');
       router.push(`/assessments/${assessmentId}/results`);
 
     } catch (error) {
       console.error('Submit assessment error:', error);
+      // Add user feedback for the error
+      alert('Failed to submit assessment. Please try again.');
+    } finally {
+      setSubmittingAssessment(false);
     }
   };
 
@@ -395,6 +682,341 @@ export default function AssessmentQuestionsPage() {
         return <div className="w-4 h-4 border-2 border-gray-500 rounded-full" />;
     }
   };
+
+  const getStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'running':
+        return 'text-green-400';
+      case 'starting':
+      case 'pending':
+        return 'text-yellow-400';
+      case 'stopping':
+      case 'restarting':
+        return 'text-orange-400';
+      case 'stopped':
+      case 'ready':
+        return 'text-gray-400';
+      case 'error':
+        return 'text-red-400';
+      default:
+        return 'text-gray-400';
+    }
+  };
+
+  const getQuestionById = useCallback((qid: string) => questions.find(q => q.id === qid), [questions]);
+
+  const refreshMachineStatus = useCallback(async (questionId: string) => {
+    // Clear cache and fetch latest
+    delete machineInfoCache.current[questionId];
+    
+    // Clear any previous errors
+    setMachineDetailsError(null);
+    
+    // Update status to show we're refreshing
+    setInstanceStates(prev => ({ 
+      ...prev, 
+      [questionId]: { 
+        ...prev[questionId], 
+        isLoading: true 
+      } 
+    }));
+    
+    try {
+      await fetchMachineInfo(questionId, { isRefresh: true, keepModalClosed: false });
+    } catch (error) {
+      // If refresh fails, show a user-friendly message
+      setMachineDetailsError('Unable to refresh status. Instance may not be started yet.');
+      
+      // Reset to a neutral state
+      setInstanceStates(prev => ({ 
+        ...prev, 
+        [questionId]: { 
+          ...prev[questionId], 
+          isLoading: false,
+          status: 'ready',
+          isRunning: false,
+          ipAddress: null
+        } 
+      }));
+    }
+  }, []);
+
+  const fetchMachineInfo = useCallback(async (questionId: string, options: { isRefresh?: boolean; keepModalClosed?: boolean } = {}) => {
+    const question = getQuestionById(questionId);
+    if (!question) return;
+
+    if (!options.isRefresh) {
+      setMachineDetailsLoading(true);
+      setMachineDetailsError(null);
+    }
+
+    const currentTime = Date.now();
+    const cached = machineInfoCache.current[questionId];
+    if (!options.isRefresh && cached && currentTime - cached.timestamp < CACHE_TTL && cached.data.status === 'running') {
+      const data = cached.data;
+      if (!options.keepModalClosed) setShowMachineDetails({ questionId, status: data.status, ip: data.ip || '' });
+      setInstanceStates(prev => ({ ...prev, [questionId]: { isRunning: true, ipAddress: data.ip || 'Pending...', isLoading: false, instanceId: data.instance_id, status: data.status, expirationTime: data.expiration_time } }));
+      setMachineDetailsLoading(false);
+      return;
+    }
+
+    try {
+      // Network Security uses network-instance endpoint
+      if (question.template_id || question.instance_id) {
+        const resp = await fetch(`/api/network-instance?action=get_status&question_id=${questionId}&candidate_id=${user?.id}&_t=${Date.now()}`, { headers: { 'Cache-Control': 'no-cache' } });
+        if (!resp.ok) {
+          if (resp.status === 404) {
+            // Handle 404 gracefully - instance never started or was terminated
+            const notFoundStatus = options.isRefresh ? 'stopped' : 'ready'; // Show 'ready' initially, 'stopped' after refresh
+            if (!options.keepModalClosed && options.isRefresh) {
+              // Only show modal on refresh, not initial load
+              setShowMachineDetails({ questionId, status: notFoundStatus, ip: '' });
+            }
+            setInstanceStates(prev => ({ ...prev, [questionId]: { isRunning: false, ipAddress: null, isLoading: false, status: notFoundStatus } }));
+            delete machineInfoCache.current[questionId];
+            if (runningNetworkInstanceRef.current === questionId) runningNetworkInstanceRef.current = null;
+          } else {
+            throw new Error('Failed to fetch machine status');
+          }
+        } else {
+          const data = await resp.json();
+          const isActive = ['running', 'pending', 'starting'].includes(data.status);
+          if (!options.keepModalClosed) setShowMachineDetails({ questionId, status: data.status, ip: data.ip || '' });
+          setInstanceStates(prev => ({ ...prev, [questionId]: { isRunning: isActive, ipAddress: data.ip || 'Pending...', isLoading: false, instanceId: data.instance_id, status: data.status, expirationTime: data.expiration_time } }));
+          if (data.status === 'running') {
+            runningNetworkInstanceRef.current = questionId;
+            machineInfoCache.current[questionId] = { data, timestamp: currentTime };
+          } else {
+            if (runningNetworkInstanceRef.current === questionId) runningNetworkInstanceRef.current = null;
+            delete machineInfoCache.current[questionId];
+          }
+        }
+      } else {
+        // No infra instance; nothing to fetch
+      }
+    } catch (e: any) {
+      console.error('fetchMachineInfo error:', e);
+      const errorStatus = options.isRefresh ? 'stopped' : 'ready';
+      setMachineDetailsError(
+        options.isRefresh 
+          ? 'Unable to refresh status. Instance may have been terminated.' 
+          : 'Unable to fetch machine status'
+      );
+      if (!options.keepModalClosed && options.isRefresh) {
+        setShowMachineDetails({ questionId, status: 'error', ip: '' });
+      }
+      setInstanceStates(prev => ({ 
+        ...prev, 
+        [questionId]: { 
+          ...prev[questionId], 
+          isRunning: false, 
+          ipAddress: null, 
+          isLoading: false, 
+          status: errorStatus 
+        } 
+      }));
+      delete machineInfoCache.current[questionId];
+      if (runningNetworkInstanceRef.current === questionId) runningNetworkInstanceRef.current = null;
+    } finally {
+      setMachineDetailsLoading(false);
+    }
+  }, [getQuestionById, user?.id]);
+
+  const startInstance = useCallback(async (questionId: string) => {
+    const question = getQuestionById(questionId);
+    if (!question) return;
+
+    // Prevent multiple network instances
+    if ((question.template_id || question.instance_id) && runningNetworkInstanceRef.current && runningNetworkInstanceRef.current !== questionId) {
+      setMachineDetailsError('Another instance is running. Stop it before starting a new one.');
+      return;
+    }
+
+    setMachineDetailsLoading(true);
+    setMachineDetailsError(null); // Clear any previous errors
+    
+    // Immediately update status to 'starting' for better UX
+    setInstanceStates(prev => ({ 
+      ...prev, 
+      [questionId]: { 
+        ...prev[questionId], 
+        isLoading: true, 
+        status: 'starting',
+        isRunning: false 
+      } 
+    }));
+    
+    try {
+      delete machineInfoCache.current[questionId];
+      let url = `/api/network-instance?action=start&question_id=${questionId}&candidate_id=${user?.id}`;
+      const templateId = question.template_id || question.docker_image || 'default-template';
+      url += `&template_id=${encodeURIComponent(templateId)}`;
+      let durationInMinutes = assessment?.duration_in_minutes || 60;
+      if (enrollment?.expires_at) {
+        const diff = new Date(enrollment.expires_at).getTime() - Date.now();
+        durationInMinutes = Math.max(1, Math.ceil(diff / 60000));
+      }
+      url += `&duration=${durationInMinutes}`;
+      url += `&_t=${Date.now()}`;
+
+      const resp = await fetch(url, { headers: { 'Cache-Control': 'no-cache' } });
+      if (!resp.ok && resp.status !== 202) throw new Error(`Failed to start instance: ${resp.statusText}`);
+      if (question.template_id || question.instance_id) runningNetworkInstanceRef.current = questionId;
+      await fetchMachineInfo(questionId, { isRefresh: true });
+      
+      // Poll more aggressively for a short period after starting
+      setTimeout(() => fetchMachineInfo(questionId, { isRefresh: true }), 3000);
+      setTimeout(() => fetchMachineInfo(questionId, { isRefresh: true }), 6000);
+    } catch (e) {
+      // Reset status on error
+      setInstanceStates(prev => ({ 
+        ...prev, 
+        [questionId]: { 
+          ...prev[questionId], 
+          isLoading: false, 
+          status: 'ready',
+          isRunning: false 
+        } 
+      }));
+      setMachineDetailsError((e as any)?.message || 'Failed to start instance');
+    } finally {
+      setMachineDetailsLoading(false);
+    }
+  }, [getQuestionById, user?.id, assessment?.duration_in_minutes, enrollment?.expires_at, fetchMachineInfo]);
+
+  const stopInstance = useCallback(async (questionId: string) => {
+    const question = getQuestionById(questionId);
+    if (!question) return;
+    setMachineDetailsLoading(true);
+    setMachineDetailsError(null); // Clear any previous errors
+    
+    // Immediately update status to 'stopping' for better UX
+    setInstanceStates(prev => ({ 
+      ...prev, 
+      [questionId]: { 
+        ...prev[questionId], 
+        isLoading: true, 
+        status: 'stopping',
+        isRunning: false 
+      } 
+    }));
+    
+    try {
+      delete machineInfoCache.current[questionId];
+      const url = `/api/network-instance?action=stop&question_id=${questionId}&candidate_id=${user?.id}&_t=${Date.now()}`;
+      const resp = await fetch(url, { headers: { 'Cache-Control': 'no-cache' } });
+      if (!resp.ok) throw new Error(`Failed to stop instance: ${resp.statusText}`);
+      if (runningNetworkInstanceRef.current === questionId) runningNetworkInstanceRef.current = null;
+      await fetchMachineInfo(questionId, { isRefresh: true });
+      
+      // Poll more aggressively for a short period after stopping
+      setTimeout(() => fetchMachineInfo(questionId, { isRefresh: true }), 3000);
+      setTimeout(() => fetchMachineInfo(questionId, { isRefresh: true }), 6000);
+    } catch (e) {
+      // Reset status on error
+      setInstanceStates(prev => ({ 
+        ...prev, 
+        [questionId]: { 
+          ...prev[questionId], 
+          isLoading: false, 
+          status: 'running', // If stop failed, assume it's still running
+          isRunning: true 
+        } 
+      }));
+      setMachineDetailsError((e as any)?.message || 'Failed to stop instance');
+    } finally {
+      setMachineDetailsLoading(false);
+    }
+  }, [getQuestionById, user?.id, fetchMachineInfo]);
+
+  const restartInstance = useCallback(async (questionId: string) => {
+    const question = getQuestionById(questionId);
+    if (!question) return;
+    setMachineDetailsLoading(true);
+    setMachineDetailsError(null); // Clear any previous errors
+    
+    // Immediately update status to 'restarting' for better UX
+    setInstanceStates(prev => ({ 
+      ...prev, 
+      [questionId]: { 
+        ...prev[questionId], 
+        isLoading: true, 
+        status: 'restarting',
+        isRunning: false 
+      } 
+    }));
+    
+    try {
+      delete machineInfoCache.current[questionId];
+      const url = `/api/network-instance?action=restart&question_id=${questionId}&candidate_id=${user?.id}&_t=${Date.now()}`;
+      const resp = await fetch(url, { headers: { 'Cache-Control': 'no-cache' } });
+      if (!resp.ok) throw new Error(`Failed to restart instance: ${resp.statusText}`);
+      await fetchMachineInfo(questionId, { isRefresh: true });
+      
+      // Poll more aggressively for a short period after restarting
+      setTimeout(() => fetchMachineInfo(questionId, { isRefresh: true }), 3000);
+      setTimeout(() => fetchMachineInfo(questionId, { isRefresh: true }), 6000);
+    } catch (e) {
+      // Reset status on error
+      setInstanceStates(prev => ({ 
+        ...prev, 
+        [questionId]: { 
+          ...prev[questionId], 
+          isLoading: false, 
+          status: 'running', // If restart failed, assume it's still running
+          isRunning: true 
+        } 
+      }));
+      setMachineDetailsError((e as any)?.message || 'Failed to restart instance');
+    } finally {
+      setMachineDetailsLoading(false);
+    }
+  }, [getQuestionById, user?.id, fetchMachineInfo]);
+
+  // Background polling for transitional states
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const ids = Object.keys(instanceStates).filter(id => ['starting', 'stopping', 'restarting', 'pending'].includes(instanceStates[id]?.status || ''));
+      ids.forEach(id => {
+        delete machineInfoCache.current[id];
+        fetchMachineInfo(id, { isRefresh: true, keepModalClosed: manuallyClosedModalIds.current.has(id) });
+      });
+    }, 5000); // Poll every 5 seconds for transitional states
+    return () => clearInterval(interval);
+  }, [instanceStates, fetchMachineInfo]);
+
+  // When status is running but IP is pending, poll machine-info API
+  useEffect(() => {
+    const ids = Object.keys(instanceStates).filter(id => (instanceStates[id]?.status === 'running' || instanceStates[id]?.status === 'pending') && (!instanceStates[id]?.ipAddress || instanceStates[id]?.ipAddress === 'Pending...'));
+    if (ids.length === 0) return;
+    const interval = setInterval(async () => {
+      await Promise.all(ids.map(async (id) => {
+        try {
+          const instanceId = instanceStates[id]?.instanceId;
+          if (!instanceId) return;
+          const resp = await fetch(`/api/machine-info?instanceId=${encodeURIComponent(instanceId)}&_t=${Date.now()}`, { headers: { 'Cache-Control': 'no-cache' } });
+          if (resp.ok) {
+            const data = await resp.json();
+            setInstanceStates(prev => ({ ...prev, [id]: { ...prev[id], ipAddress: data?.ip || prev[id]?.ipAddress || null, status: data?.status || prev[id]?.status } }));
+            if (data?.ip) {
+              machineInfoCache.current[id] = { data, timestamp: Date.now() } as any;
+            }
+          }
+        } catch {}
+      }));
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [instanceStates]);
+
+  // Terminate all running instances on assessment submit
+  const originalHandleSubmitAssessment = handleSubmitAssessment;
+  const handleSubmitAssessmentWithTerminate = useCallback(async () => {
+    await originalHandleSubmitAssessment();
+    try {
+      const ids = Object.keys(instanceStates);
+      await Promise.all(ids.map(id => fetch(`/api/network-instance?action=terminate&question_id=${id}&candidate_id=${user?.id}&_t=${Date.now()}`)));
+    } catch {}
+  }, [originalHandleSubmitAssessment, instanceStates, user?.id]);
 
   if (loading) {
     return (
@@ -494,7 +1116,7 @@ export default function AssessmentQuestionsPage() {
                           </span>
                         </div>
                         <div className="text-xs text-gray-400 mt-1">
-                          {question.points} points
+                          {question.score} points
                         </div>
                       </button>
                     );
@@ -538,10 +1160,18 @@ export default function AssessmentQuestionsPage() {
 
               {/* Submit Assessment Button */}
               <button
-                onClick={handleSubmitAssessment}
-                className="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white font-semibold rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200"
+                onClick={handleSubmitAssessmentWithTerminate}
+                disabled={submittingAssessment}
+                className="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white font-semibold rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
               >
-                Submit Assessment
+                {submittingAssessment ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Submitting...
+                  </>
+                ) : (
+                  'Submit Assessment'
+                )}
               </button>
             </div>
           </div>
@@ -567,7 +1197,7 @@ export default function AssessmentQuestionsPage() {
                     {currentQuestion.difficulty}
                   </span>
                   <span className="text-gray-400">
-                    {currentQuestion.points} points
+                    {currentQuestion.score} points
                   </span>
                 </div>
                 
@@ -592,7 +1222,7 @@ export default function AssessmentQuestionsPage() {
               {/* Question Content */}
               <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
                 <h3 className="text-xl font-semibold text-white mb-4">
-                  {currentQuestion.question_text}
+                  {currentQuestion.name}
                 </h3>
                 
                 {currentQuestion.description && (
@@ -603,12 +1233,73 @@ export default function AssessmentQuestionsPage() {
                   </div>
                 )}
 
+                {/* Instance Controls (AWS-backed) */}
+                {(currentQuestion.template_id || currentQuestion.instance_id) && (
+                  <div className="mb-6 rounded-lg border border-gray-border bg-dark-bg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-white font-semibold">Challenge Instance</h4>
+                      <span className="text-xs text-gray-400">Only one instance can run at a time</span>
+                    </div>
+
+                    {/* Status and IP */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                      <div>
+                        <div className="text-gray-400 text-xs">Status</div>
+                        <div className={`text-sm font-mono ${getStatusColor(instanceStates[currentQuestion.id]?.status || 'ready')}`}>
+                          {instanceStates[currentQuestion.id]?.status || 'ready'}
+                        </div>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <div className="text-gray-400 text-xs">Public IP</div>
+                        <div className="text-sm text-white font-mono break-all">
+                          {instanceStates[currentQuestion.id]?.ipAddress || 'N/A'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => startInstance(currentQuestion.id)}
+                        className="px-3 py-2 text-sm rounded bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+                        disabled={['running', 'starting', 'restarting'].includes(instanceStates[currentQuestion.id]?.status || '') || machineDetailsLoading}
+                      >
+                        {instanceStates[currentQuestion.id]?.status === 'starting' ? 'Starting...' : 'Start'}
+                      </button>
+                      <button
+                        onClick={() => stopInstance(currentQuestion.id)}
+                        className="px-3 py-2 text-sm rounded bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                        disabled={!['running', 'pending'].includes(instanceStates[currentQuestion.id]?.status || '') || machineDetailsLoading}
+                      >
+                        {instanceStates[currentQuestion.id]?.status === 'stopping' ? 'Stopping...' : 'Stop'}
+                      </button>
+                      <button
+                        onClick={() => restartInstance(currentQuestion.id)}
+                        className="px-3 py-2 text-sm rounded bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50"
+                        disabled={!['running', 'pending'].includes(instanceStates[currentQuestion.id]?.status || '') || machineDetailsLoading}
+                      >
+                        {instanceStates[currentQuestion.id]?.status === 'restarting' ? 'Restarting...' : 'Restart'}
+                      </button>
+                      <button
+                        onClick={() => fetchMachineInfo(currentQuestion.id, { isRefresh: true })}
+                        className="px-3 py-2 text-sm rounded bg-gray-700 hover:bg-gray-600 text-white disabled:opacity-50"
+                        disabled={machineDetailsLoading}
+                      >
+                        {machineDetailsLoading ? 'Refreshing...' : 'Refresh Status'}
+                      </button>
+                      {machineDetailsError && (
+                        <div className="text-xs text-red-400 mt-2 w-full">{machineDetailsError}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Source Code */}
-                {currentQuestion.source_code && (
+                {currentQuestion.solution && (
                   <div className="bg-dark-bg border border-gray-border rounded-lg p-4 mb-6">
                     <h4 className="text-sm font-semibold text-gray-300 mb-2">Source Code:</h4>
                     <pre className="text-sm text-gray-300 overflow-x-auto">
-                      <code>{currentQuestion.source_code}</code>
+                      <code>{currentQuestion.solution}</code>
                     </pre>
                   </div>
                 )}

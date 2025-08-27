@@ -1,20 +1,38 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import AdminLayout from '@/components/AdminLayout';
-import { ArrowLeft, Save, Plus, X, Clock, FileText } from 'lucide-react';
+import { ArrowLeft, Save, Plus, X, Clock, FileText, Library, Users, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { toast } from 'sonner';
+import ChallengeLibraryModal from '@/components/ChallengeLibraryModal';
+import InviteCandidateModal from '@/components/InviteCandidateModal';
 
 interface Section {
   id: string;
   title: string;
   description: string;
   order_index: number;
+  question_ids: string[];
+}
+
+interface Question {
+  id: string;
+  name: string;
+  description: string;
+  type: string;
+  difficulty: string;
+  score: number;
 }
 
 export default function NewAssessmentPage() {
   const [loading, setLoading] = useState(false);
+  const [showChallengeLibrary, setShowChallengeLibrary] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [currentSectionId, setCurrentSectionId] = useState<string | null>(null);
+  const [createdAssessmentId, setCreatedAssessmentId] = useState<string | null>(null);
+  const [challenges, setChallenges] = useState<Question[]>([]);
+  
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -59,7 +77,8 @@ export default function NewAssessmentPage() {
       id: crypto.randomUUID(),
       title: '',
       description: '',
-      order_index: sections.length
+      order_index: sections.length,
+      question_ids: []
     };
     setSections([...sections, newSection]);
   };
@@ -73,6 +92,72 @@ export default function NewAssessmentPage() {
   const removeSection = (id: string) => {
     setSections(sections.filter(section => section.id !== id)
       .map((section, index) => ({ ...section, order_index: index })));
+  };
+
+  const handleAddChallenges = (sectionId: string) => {
+    setCurrentSectionId(sectionId);
+    setShowChallengeLibrary(true);
+  };
+
+  const handleChallengesSelected = async (questionIds: string[]) => {
+    if (!currentSectionId) return;
+
+    // Fetch challenge details
+    const { data: selectedChallenges, error } = await supabase
+      .from('questions')
+      .select('id, name, description, type, difficulty, score')
+      .in('id', questionIds);
+
+    if (error) {
+      console.error('Error fetching challenges:', error);
+      toast.error('Failed to load challenge details');
+      return;
+    }
+
+    // Update the section with new challenges
+    setSections(prev => prev.map(section => {
+      if (section.id === currentSectionId) {
+        const existingIds = new Set(section.question_ids);
+        const newQuestionIds = [...section.question_ids];
+        
+        questionIds.forEach(id => {
+          if (!existingIds.has(id)) {
+            newQuestionIds.push(id);
+          }
+        });
+
+        return {
+          ...section,
+          question_ids: newQuestionIds
+        };
+      }
+      return section;
+    }));
+
+    // Update challenges state
+    setChallenges(prev => {
+      const existingIds = new Set(prev.map(c => c.id));
+      const newChallenges = selectedChallenges?.filter(c => !existingIds.has(c.id)) || [];
+      return [...prev, ...newChallenges];
+    });
+
+    toast.success(`Added ${questionIds.length} challenge(s) to section`);
+  };
+
+  const removeChallengeFromSection = (sectionId: string, questionId: string) => {
+    setSections(prev => prev.map(section => {
+      if (section.id === sectionId) {
+        return {
+          ...section,
+          question_ids: section.question_ids.filter(id => id !== questionId)
+        };
+      }
+      return section;
+    }));
+  };
+
+  const getExistingChallengeIds = () => {
+    return sections.flatMap(section => section.question_ids);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -96,44 +181,46 @@ export default function NewAssessmentPage() {
     setLoading(true);
 
     try {
-      // Create the assessment
+      // Create the assessment with correct column names
       const { data: assessment, error: assessmentError } = await supabase
         .from('assessments')
         .insert([{
-          title: formData.title.trim(),
+          name: formData.title.trim(),
           description: formData.description.trim(),
-          category: formData.category,
+          // category is optional in schema variants; omit to avoid schema mismatches
           difficulty: formData.difficulty,
-          duration_minutes: formData.duration_minutes,
-          is_active: formData.is_active,
-          instructions: formData.instructions.trim(),
-          prerequisites: formData.prerequisites.trim(),
-          learning_objectives: formData.learning_objectives.trim(),
-          pass_percentage: formData.pass_percentage
+          duration_in_minutes: formData.duration_minutes,
+          status: formData.is_active ? 'ACTIVE' : 'DRAFT'
+          // Optional fields omitted to keep compatibility across schema variants
         }])
         .select()
         .single();
 
       if (assessmentError) throw assessmentError;
 
-      // Create the sections
+      // Create the sections in the standard 'sections' table
       if (sections.length > 0) {
-        const sectionsData = sections.map(section => ({
+        const sectionsData = sections.map((section, idx) => ({
           assessment_id: assessment.id,
-          title: section.title.trim(),
+          name: section.title.trim(),
           description: section.description.trim(),
-          order_index: section.order_index
+          order_index: idx,
+          question_ids: section.question_ids
         }));
 
         const { error: sectionsError } = await supabase
-          .from('assessment_sections')
+          .from('sections')
           .insert(sectionsData);
 
         if (sectionsError) throw sectionsError;
       }
 
+      setCreatedAssessmentId(assessment.id);
       toast.success('Assessment created successfully!');
-      router.push('/admin/assessments');
+      
+      // Show invitation modal after successful creation
+      setShowInviteModal(true);
+      router.push(`/admin/assessments/${assessment.id}`);
     } catch (error) {
       console.error('Error creating assessment:', error);
       toast.error('Failed to create assessment. Please try again.');
@@ -405,6 +492,68 @@ export default function NewAssessmentPage() {
                         />
                       </div>
                     </div>
+
+                    {/* Challenges in Section */}
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="text-sm font-medium text-gray-300">
+                          Challenges ({section.question_ids.length})
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => handleAddChallenges(section.id)}
+                          className="flex items-center text-sm px-3 py-1 bg-neon-green/10 text-neon-green rounded-lg hover:bg-neon-green/20 transition-colors"
+                        >
+                          <Library className="h-4 w-4 mr-1" />
+                          Add from Library
+                        </button>
+                      </div>
+
+                      {section.question_ids.length === 0 ? (
+                        <div className="border border-dashed border-gray-600 rounded-lg p-4 text-center">
+                          <p className="text-sm text-gray-400">No challenges added yet</p>
+                          <button
+                            type="button"
+                            onClick={() => handleAddChallenges(section.id)}
+                            className="text-neon-green hover:text-green-400 text-sm mt-1 transition-colors"
+                          >
+                            Add challenges from library
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-32 overflow-y-auto">
+                          {section.question_ids.map((questionId, challengeIndex) => {
+                            const challenge = challenges.find(c => c.id === questionId);
+                            return (
+                              <div key={questionId} className="flex items-center justify-between bg-dark-secondary/50 rounded-lg p-2">
+                                <div className="flex items-center space-x-3">
+                                  <span className="text-xs text-gray-400">#{challengeIndex + 1}</span>
+                                  <div>
+                                    <p className="text-sm text-white font-medium">
+                                      {challenge?.name || 'Loading...'}
+                                    </p>
+                                    <div className="flex items-center space-x-2 text-xs text-gray-400">
+                                      <span>{challenge?.type || ''}</span>
+                                      <span>•</span>
+                                      <span>{challenge?.difficulty || ''}</span>
+                                      <span>•</span>
+                                      <span>{challenge?.score || 0} pts</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeChallengeFromSection(section.id, questionId)}
+                                  className="p-1 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -438,6 +587,55 @@ export default function NewAssessmentPage() {
             </button>
           </div>
         </form>
+
+        {/* Success Actions */}
+        {createdAssessmentId && (
+          <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-6 mt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-green-400 mb-2">Assessment Created Successfully! 🎉</h3>
+                <p className="text-green-300 text-sm">Your assessment has been created. What would you like to do next?</p>
+              </div>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => setShowInviteModal(true)}
+                  className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  <Users className="h-4 w-4 mr-2" />
+                  Invite Candidates
+                </button>
+                <Link
+                  href={`/admin/assessments/${createdAssessmentId}`}
+                  className="flex items-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                >
+                  <ChevronRight className="h-4 w-4 mr-2" />
+                  View Assessment
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modals */}
+        <ChallengeLibraryModal
+          isOpen={showChallengeLibrary}
+          onClose={() => {
+            setShowChallengeLibrary(false);
+            setCurrentSectionId(null);
+          }}
+          onSelectChallenges={handleChallengesSelected}
+          existingChallengeIds={getExistingChallengeIds()}
+        />
+
+        <InviteCandidateModal
+          isOpen={showInviteModal}
+          onClose={() => setShowInviteModal(false)}
+          assessmentId={createdAssessmentId || ''}
+          onInviteSent={() => {
+            toast.success('Invitations sent successfully!');
+            setShowInviteModal(false);
+          }}
+        />
       </div>
     </AdminLayout>
   );

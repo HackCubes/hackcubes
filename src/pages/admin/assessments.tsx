@@ -144,7 +144,9 @@ export default function AssessmentsPage() {
                   {assessments.map((a) => (
                     <tr key={a.id} className="hover:bg-dark-bg/50 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="text-white font-semibold">{a.name}</div>
+                        <div className="text-white font-semibold">
+                          <Link href={`/admin/assessments/${a.id}`} className="hover:underline">{a.name}</Link>
+                        </div>
                         <div className="text-gray-400 text-sm line-clamp-1">{a.description}</div>
                       </td>
                       <td className="px-6 py-4">
