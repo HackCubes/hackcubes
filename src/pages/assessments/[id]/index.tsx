@@ -310,30 +310,112 @@ export default function AssessmentWelcomePage() {
       return;
     }
 
+    const confirmReset = window.confirm(
+      'Are you sure you want to start over? This will clear all your previous submissions and reset your score to 0. This action cannot be undone.'
+    );
+    
+    if (!confirmReset) return;
+
     setStarting(true);
     try {
-      // Delete any existing submissions to truly restart
-      const { error: deleteError } = await supabase
+      // Get existing submissions to find active submission ID and clear flag submissions
+      const { data: existingSubmissions } = await supabase
         .from('submissions')
-        .delete()
+        .select('*')
         .eq('assessment_id', assessment.id)
         .eq('candidate_id', user.id);
 
-      if (deleteError) {
-        console.warn('Could not delete existing submissions:', deleteError);
+      if (existingSubmissions && existingSubmissions.length > 0) {
+        const activeSubmissionId = existingSubmissions[0].id;
+        
+        console.log('🗑️ Clearing flag submissions from existing submission...');
+        
+        // Clear flag submissions from database (keep submission to avoid constraint issues)
+        const { error: flagSubmissionsError } = await supabase
+          .from('flag_submissions')
+          .delete()
+          .eq('submission_id', activeSubmissionId);
+
+        if (flagSubmissionsError) {
+          console.error('Error clearing flag submissions:', flagSubmissionsError);
+        } else {
+          console.log('✅ Flag submissions cleared');
+        }
+
+        // Reset the existing submission instead of deleting and recreating
+        const expiryTime = new Date();
+        expiryTime.setMinutes(expiryTime.getMinutes() + assessment.duration_in_minutes);
+
+        const { data: resetSubmission, error: resetError } = await supabase
+          .from('submissions')
+          .update({
+            status: 'STARTED',
+            total_score: 0,
+            current_score: 0,
+            progress_percentage: 0,
+            expires_at: expiryTime.toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: null
+          })
+          .eq('id', activeSubmissionId)
+          .select()
+          .single();
+
+        if (resetError) {
+          console.error('Error resetting submission:', resetError);
+          throw new Error('Failed to reset submission: ' + resetError.message);
+        }
+
+        console.log('✅ Submission reset with ID:', resetSubmission.id);
+      } else {
+        // No existing submission, create a new one
+        console.log('➕ Creating new submission...');
+        
+        const expiryTime = new Date();
+        expiryTime.setMinutes(expiryTime.getMinutes() + assessment.duration_in_minutes);
+
+        // Get invitation ID from enrollments or use a default approach
+        const { data: enrollmentData } = await supabase
+          .from('enrollments')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('assessment_id', assessment.id)
+          .single();
+
+        const { data: newSubmission, error: createError } = await supabase
+          .from('submissions')
+          .insert({
+            assessment_id: assessment.id,
+            candidate_id: user.id,
+            invitation_id: enrollmentData?.invitation_id || null,
+            status: 'STARTED',
+            type: 'CTF',
+            total_score: 0,
+            current_score: 0,
+            progress_percentage: 0,
+            expires_at: expiryTime.toISOString(),
+            started_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error('Error creating new submission:', createError);
+          throw new Error('Failed to create new submission: ' + createError.message);
+        }
+
+        console.log('✅ New submission created with ID:', newSubmission.id);
       }
 
-      // Reset enrollment status and scores
+      // Reset enrollment status
       const { error: resetEnrollmentError } = await supabase
         .from('enrollments')
         .update({
-          status: 'ENROLLED',
-          started_at: null,
-          completed_at: null,
-          expires_at: null,
+          status: 'IN_PROGRESS',
           final_score: 0,
           current_score: 0,
-          progress_percentage: 0
+          progress_percentage: 0,
+          completed_at: null
         })
         .eq('user_id', user.id)
         .eq('assessment_id', assessment.id);
@@ -343,31 +425,33 @@ export default function AssessmentWelcomePage() {
       }
 
       // Clear localStorage submissions for this assessment
-      const localSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
-      Object.keys(localSubmissions).forEach(key => {
-        delete localSubmissions[key];
-      });
-      localStorage.setItem('flag_submissions', JSON.stringify(localSubmissions));
-
-      // Clear user flag submissions
-      const { error: clearFlagSubmissionsError } = await supabase
-        .from('user_flag_submissions')
-        .delete()
-        .in('enrollment_id', [enrollment?.id].filter(Boolean));
-
-      if (clearFlagSubmissionsError) {
-        console.warn('Could not clear flag submissions:', clearFlagSubmissionsError);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('flag_submissions');
+        localStorage.removeItem('assessment_attempt_history');
+        sessionStorage.clear();
+        
+        // Clear any other assessment-related localStorage items
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('flag_submissions') || key.includes('assessment') || key.includes(assessment.id))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        
+        console.log('🧹 Cleared localStorage and sessionStorage completely');
       }
 
-      // Clear the existing submission state
-      setExistingSubmission(null);
-
-      // Now start fresh
-      await handleStartAssessment();
+      toast.success('Assessment reset successfully! Starting fresh...');
+      
+      // Navigate to questions page with reset parameter
+      await router.push(`/assessments/${assessment.id}/questions?reset=true&t=${Date.now()}`);
       
     } catch (error: any) {
       console.error('Error restarting assessment:', error);
-      toast.error(error.message || 'Failed to restart assessment');
+      toast.error(error.message || 'Failed to restart assessment. Please try again.');
+    } finally {
       setStarting(false);
     }
   };

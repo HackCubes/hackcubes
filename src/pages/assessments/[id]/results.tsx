@@ -75,6 +75,7 @@ export default function AssessmentResultsPage() {
   const [loading, setLoading] = useState(true);
   const [showDetailedResults, setShowDetailedResults] = useState(false);
   const [submissionCompleted, setSubmissionCompleted] = useState(false);
+  const [resettingAssessment, setResettingAssessment] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -141,13 +142,46 @@ export default function AssessmentResultsPage() {
         // Fetch submissions (user's flag submissions)
         let fetchedSubmissions: any[] = [];
         if (enrollmentData?.id) {
+          // First try user_flag_submissions (legacy flow)
           const { data: subsData } = await supabase
             .from('user_flag_submissions')
             .select('*')
             .eq('enrollment_id', enrollmentData.id);
           fetchedSubmissions = subsData || [];
-        } else {
-          // Fallback to localStorage when enrollment isn't available yet
+        }
+        
+        // If no legacy submissions found, try modern flow (flag_submissions)
+        if (fetchedSubmissions.length === 0) {
+          // Try to find submissions via the submissions table
+          const { data: submissionData } = await supabase
+            .from('submissions')
+            .select('id')
+            .eq('assessment_id', assessmentId)
+            .eq('candidate_id', user.id);
+          
+          if (submissionData && submissionData.length > 0) {
+            // Get flag submissions for this submission
+            const { data: flagSubs } = await supabase
+              .from('flag_submissions')
+              .select('*')
+              .eq('submission_id', submissionData[0].id);
+            
+            // Convert flag_submissions to user_flag_submissions format for compatibility
+            fetchedSubmissions = (flagSubs || []).map((fs: any) => ({
+              id: fs.id,
+              enrollment_id: enrollmentData?.id || 'modern',
+              question_id: fs.question_id,
+              flag_id: fs.flag_id,
+              submitted_answer: fs.submitted_flag || fs.value || '',
+              is_correct: fs.is_correct,
+              points_awarded: fs.score || 0,
+              submitted_at: fs.created_at || new Date().toISOString()
+            }));
+          }
+        }
+        
+        // Final fallback to localStorage
+        if (fetchedSubmissions.length === 0) {
           try {
             const raw = typeof window !== 'undefined' ? localStorage.getItem('flag_submissions') : null;
             const parsed = raw ? JSON.parse(raw) : {};
@@ -185,6 +219,169 @@ export default function AssessmentResultsPage() {
     const incorrectAnswers = submissions.filter(s => !s.is_correct && s.submitted_answer).length;
     const unanswered = Math.max(0, questions.length - submissions.length);
     return { correctAnswers, incorrectAnswers, unanswered };
+  };
+
+  const handleStartOver = async () => {
+    if (!enrollment || !user || !assessmentId) return;
+
+    const confirmReset = window.confirm(
+      'Are you sure you want to start over? This will clear all your previous submissions and reset your score to 0. This action cannot be undone.'
+    );
+
+    if (!confirmReset) return;
+
+    setResettingAssessment(true);
+    try {
+      // Get existing submissions to find active submission ID and clear flag submissions
+      const { data: existingSubmissions } = await supabase
+        .from('submissions')
+        .select('*')
+        .eq('assessment_id', assessmentId)
+        .eq('candidate_id', user.id);
+
+      if (existingSubmissions && existingSubmissions.length > 0) {
+        const activeSubmissionId = existingSubmissions[0].id;
+        const invitationId = existingSubmissions[0].invitation_id;
+        
+        console.log('🗑️ Clearing flag submissions from existing submission...');
+        
+        // Clear flag submissions from database (keep submission to avoid constraint issues)
+        const { error: flagSubmissionsError } = await supabase
+          .from('flag_submissions')
+          .delete()
+          .eq('submission_id', activeSubmissionId);
+
+        if (flagSubmissionsError) {
+          console.error('Error clearing flag submissions:', flagSubmissionsError);
+        } else {
+          console.log('✅ Flag submissions cleared');
+        }
+
+        // Reset the existing submission instead of deleting and recreating
+        const expiryTime = new Date();
+        expiryTime.setMinutes(expiryTime.getMinutes() + (assessment?.duration_in_minutes || 60));
+
+        const { data: resetSubmission, error: resetError } = await supabase
+          .from('submissions')
+          .update({
+            status: 'STARTED',
+            total_score: 0,
+            current_score: 0,
+            progress_percentage: 0,
+            expires_at: expiryTime.toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: null
+          })
+          .eq('id', activeSubmissionId)
+          .select()
+          .single();
+
+        if (resetError) {
+          console.error('Error resetting submission:', resetError);
+          throw new Error('Failed to reset submission: ' + resetError.message);
+        }
+
+        console.log('✅ Submission reset with ID:', resetSubmission.id);
+      } else {
+        // No existing submission, create a new one
+        console.log('➕ Creating new submission...');
+        
+        const expiryTime = new Date();
+        expiryTime.setMinutes(expiryTime.getMinutes() + (assessment?.duration_in_minutes || 60));
+
+        // Get invitation ID from enrollments or use a default approach
+        const { data: enrollmentData } = await supabase
+          .from('enrollments')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('assessment_id', assessmentId)
+          .single();
+
+        const { data: newSubmission, error: createError } = await supabase
+          .from('submissions')
+          .insert({
+            assessment_id: assessmentId,
+            candidate_id: user.id,
+            invitation_id: enrollmentData?.invitation_id || null,
+            status: 'STARTED',
+            type: 'CTF',
+            total_score: 0,
+            current_score: 0,
+            progress_percentage: 0,
+            expires_at: expiryTime.toISOString(),
+            started_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error('Error creating new submission:', createError);
+          throw new Error('Failed to create new submission: ' + createError.message);
+        }
+
+        console.log('✅ New submission created with ID:', newSubmission.id);
+      }
+
+      // Reset enrollment status
+      const { error: resetEnrollmentError } = await supabase
+        .from('enrollments')
+        .update({
+          status: 'IN_PROGRESS',
+          final_score: 0,
+          current_score: 0,
+          progress_percentage: 0,
+          completed_at: null
+        })
+        .eq('user_id', user.id)
+        .eq('assessment_id', assessmentId);
+
+      if (resetEnrollmentError) {
+        console.error('Error resetting enrollment:', resetEnrollmentError);
+      }
+
+      // Clear any legacy submissions
+      const { error: legacySubmissionsError } = await supabase
+        .from('user_flag_submissions')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (legacySubmissionsError) {
+        console.error('Error clearing legacy submissions:', legacySubmissionsError);
+        // Don't throw here, just log the error
+      }
+
+      // Clear localStorage completely
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('flag_submissions');
+        localStorage.removeItem('assessment_attempt_history');
+        sessionStorage.clear();
+        
+        // Also clear any other assessment-related localStorage items
+        const keysToRemove = [];
+        const assessmentIdStr = Array.isArray(assessmentId) ? assessmentId[0] : assessmentId;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('flag_submissions') || key.includes('assessment') || (assessmentIdStr && key.includes(assessmentIdStr)))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        
+        console.log('🧹 Cleared localStorage and sessionStorage completely');
+      }
+
+      console.log('Assessment reset successfully');
+
+      // Force a complete page refresh to ensure all state is cleared
+      const assessmentIdStr = Array.isArray(assessmentId) ? assessmentId[0] : assessmentId;
+      window.location.href = `/assessments/${assessmentIdStr}/questions?reset=true&t=${Date.now()}`;
+
+    } catch (error) {
+      console.error('Start over error:', error);
+      alert('Failed to reset assessment. Please try again.');
+    } finally {
+      setResettingAssessment(false);
+    }
   };
 
   const formatDuration = (minutes: number) => {
@@ -474,7 +671,9 @@ export default function AssessmentResultsPage() {
             </motion.div>
           )}
 
-          {/* Next Steps */}
+
+
+          {/* What's Next */}
           <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
             <h3 className="text-xl font-bold text-white mb-4">What's Next?</h3>
             
@@ -511,6 +710,34 @@ export default function AssessmentResultsPage() {
                 </Link>
               </div>
             </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex justify-center space-x-4 mt-8">
+            <button
+              onClick={handleStartOver}
+              disabled={resettingAssessment}
+              className="px-6 py-3 bg-gradient-to-r from-orange-600 to-orange-800 text-white font-bold rounded-lg hover:from-orange-700 hover:to-orange-900 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            >
+              {resettingAssessment ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Resetting...
+                </>
+              ) : (
+                <>
+                  <ArrowRight className="h-5 w-5 mr-2 transform rotate-180" />
+                  Start Over
+                </>
+              )}
+            </button>
+            <Link
+              href="/dashboard"
+              className="px-6 py-3 bg-gradient-to-r from-gray-600 to-gray-800 text-white font-bold rounded-lg hover:from-gray-700 hover:to-gray-900 transition-all duration-200 flex items-center"
+            >
+              <ArrowRight className="h-5 w-5 mr-2" />
+              Back to Dashboard
+            </Link>
           </div>
         </motion.div>
       </div>

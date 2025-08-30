@@ -9,13 +9,13 @@ import {
   XCircle, 
   Eye, 
   EyeOff, 
-  AlertTriangle,
   Send,
   Save,
   ChevronLeft,
   ChevronRight,
   Menu,
-  X
+  X,
+  AlertTriangle
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/router';
@@ -130,12 +130,56 @@ export default function AssessmentQuestionsPage() {
   const [machineDetailsLoading, setMachineDetailsLoading] = useState(false);
   const [machineDetailsError, setMachineDetailsError] = useState<string | null>(null);
   const autoSaveInterval = useRef<NodeJS.Timeout | null>(null);
+  // Track modern submissions flow id if present
+  const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(null);
 
   // Add missing refs/constants for instance control flow
   const CACHE_TTL = 10 * 60 * 1000; // 10 minutes cache TTL
   const machineInfoCache = useRef<Record<string, { data: any; timestamp: number }>>({});
   const runningNetworkInstanceRef = useRef<string | null>(null);
   const manuallyClosedModalIds = useRef<Set<string>>(new Set());
+
+  // NEW: answers per-flag and submitting state per-flag
+  const [flagAnswers, setFlagAnswers] = useState<{ [flagId: string]: string }>({});
+  const [submittingFlags, setSubmittingFlags] = useState<{ [flagId: string]: boolean }>({});
+
+  // Function to reset all progress and state
+  const resetAllProgress = useCallback(() => {
+    setSubmissions([]);
+    setCurrentAnswers({});
+    setFlagAnswers({});
+    setSubmittingFlags({});
+    setCurrentQuestionIndex(0);
+    setShowHints({});
+    setSidebarOpen(false);
+    setAutoSaving(false);
+    setSubmittingAssessment(false);
+    setInstanceStates({});
+    setShowMachineDetails(null);
+    setMachineDetailsLoading(false);
+    setMachineDetailsError(null);
+    
+    // Clear all localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('flag_submissions');
+      localStorage.removeItem('assessment_attempt_history');
+      sessionStorage.clear();
+      
+      // Clear any other assessment-related localStorage items
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('flag_submissions') || key.includes('assessment') || (assessmentIdParam && typeof assessmentIdParam === 'string' && key.includes(assessmentIdParam)))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      
+      console.log('🧹 Cleared localStorage and sessionStorage completely');
+    }
+    
+    console.log('🔄 All progress and state cleared');
+  }, [assessmentIdParam]);
 
   // Timer
   useEffect(() => {
@@ -180,6 +224,21 @@ export default function AssessmentQuestionsPage() {
     if (!router.isReady || !assessmentIdParam || typeof assessmentIdParam !== 'string') return;
 
     try {
+      // Check if we're coming from a "Start Over" action
+      const isReset = router.query.reset === 'true';
+      
+      if (isReset) {
+        // Force clear all cached data immediately
+        resetAllProgress();
+        console.log('🔄 Detected reset from Start Over, clearing all cached data');
+        
+        // Remove the reset parameter from URL to prevent repeated clearing
+        router.replace(`/assessments/${assessmentIdParam}/questions`, undefined, { shallow: true });
+        
+        // Force a small delay to ensure state is cleared before proceeding
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
       // Check authentication
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
@@ -212,6 +271,7 @@ export default function AssessmentQuestionsPage() {
           setEnrollment(submissionRecord);
           enrollmentId = submissionData.id;
           submissionId = submissionData.id;
+          setActiveSubmissionId(submissionData.id);
           
           console.log('Using modern submissions flow with ID:', submissionId);
         }
@@ -244,6 +304,7 @@ export default function AssessmentQuestionsPage() {
           
           setEnrollment(enrollmentData);
           enrollmentId = enrollmentData.id;
+          setActiveSubmissionId(null);
           
           console.log('Using fallback enrollments flow with ID:', enrollmentId);
         } catch (e) {
@@ -284,60 +345,66 @@ export default function AssessmentQuestionsPage() {
         .in('question_id', (questionsData || []).map(q => q.id));
       setFlags(flagsData || []);
 
-      // Fetch existing submissions
+      // Fetch existing submissions - SKIP if this is a reset
       let submissionsData: Submission[] = [];
       
-      if (submissionId) {
-        // Modern flow: Use flag_submissions with submission_id
-        try {
-          const { data: flagSubmissionsData } = await supabase
-            .from('flag_submissions')
-            .select('*')
-            .eq('submission_id', submissionId);
-          
-          // Convert flag_submissions to user_flag_submissions format
-          submissionsData = (flagSubmissionsData || []).map(fs => ({
-            id: fs.id,
-            question_id: fs.question_id,
-            flag_id: fs.flag_id,
-            submitted_answer: fs.value,
-            is_correct: fs.is_correct,
-            points_awarded: fs.score || 0,
-            submitted_at: fs.created_at
-          }));
-        } catch (e) {
-          console.log('flag_submissions table not available, trying user_flag_submissions...');
-        }
-      }
-      
-      if (submissionsData.length === 0) {
-        // Fallback: Use user_flag_submissions with enrollment_id
-        const { data: userSubmissionsData } = await supabase
-          .from('user_flag_submissions')
-          .select('*')
-          .eq('enrollment_id', enrollmentId);
-        submissionsData = userSubmissionsData || [];
-      }
-      
-      // Also load from localStorage as additional fallback
-      const localSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
-      Object.values(localSubmissions).forEach((localSub: any) => {
-        if (localSub.enrollment_id === enrollmentId) {
-          // Only add if not already in submissionsData
-          const exists = submissionsData.find(s => s.question_id === localSub.question_id);
-          if (!exists) {
-            submissionsData.push(localSub);
+      if (!isReset) {
+        if (submissionId) {
+          // Modern flow: Use flag_submissions with submission_id
+          try {
+            const { data: flagSubmissionsData } = await supabase
+              .from('flag_submissions')
+              .select('*')
+              .eq('submission_id', submissionId);
+            
+            // Convert flag_submissions to user_flag_submissions format
+            submissionsData = (flagSubmissionsData || []).map((fs: any) => {
+              return {
+                id: fs.id,
+                question_id: fs.question_id,
+                flag_id: fs.flag_id,
+                submitted_answer: fs.value ?? fs.submitted_flag ?? '',
+                is_correct: fs.is_correct,
+                points_awarded: fs.score || 0,
+                submitted_at: fs.created_at || new Date().toISOString()
+              } as Submission;
+            });
+          } catch (e) {
+            console.log('flag_submissions table not available, trying user_flag_submissions...');
           }
         }
-      });
+        
+        if (submissionsData.length === 0) {
+          // Fallback: Use user_flag_submissions with enrollment_id
+          const { data: userSubmissionsData } = await supabase
+            .from('user_flag_submissions')
+            .select('*')
+            .eq('enrollment_id', enrollmentId);
+          submissionsData = userSubmissionsData || [];
+        }
+        
+        // Also load from localStorage as additional fallback (only if not reset)
+        const localSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
+        Object.values(localSubmissions).forEach((localSub: any) => {
+          if (localSub.enrollment_id === enrollmentId) {
+            // Only add if not already in submissionsData
+            const exists = submissionsData.find(s => s.question_id === localSub.question_id);
+            if (!exists) {
+              submissionsData.push(localSub);
+            }
+          }
+        });
+      }
       
       setSubmissions(submissionsData);
 
-      // Initialize current answers from submissions
+      // Initialize current answers from submissions (but not if reset)
       const answers: {[key: string]: string} = {};
-      submissionsData?.forEach(sub => {
-        answers[sub.question_id] = sub.submitted_answer;
-      });
+      if (!isReset) {
+        submissionsData?.forEach(sub => {
+          answers[sub.question_id] = sub.submitted_answer;
+        });
+      }
       setCurrentAnswers(answers);
 
       // Initialize instance states for all questions
@@ -361,7 +428,7 @@ export default function AssessmentQuestionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [assessmentIdParam, router.isReady, supabase]);
+  }, [assessmentIdParam, router.isReady, supabase, resetAllProgress]);
 
   useEffect(() => {
     fetchData();
@@ -385,31 +452,18 @@ export default function AssessmentQuestionsPage() {
 
     setAutoSaving(true);
     try {
-      // Save current answers as draft submissions
-      for (const [questionId, answer] of Object.entries(currentAnswers)) {
+      // Draft save: only update existing records for the specific flag answer
+      for (const [flagId, answer] of Object.entries(flagAnswers)) {
         if (!answer.trim()) continue;
+        const flag = flags.find(f => f.id === flagId);
+        if (!flag) continue;
 
-        const existingSubmission = submissions.find(s => s.question_id === questionId);
-        
+        const existingSubmission = submissions.find(s => s.question_id === flag.question_id && s.flag_id === flagId);
         if (existingSubmission) {
           await supabase
             .from('user_flag_submissions')
             .update({ submitted_answer: answer })
             .eq('id', existingSubmission.id);
-        } else {
-          const questionFlags = flags.filter(f => f.question_id === questionId);
-          if (questionFlags.length > 0) {
-            await supabase
-              .from('user_flag_submissions')
-              .insert({
-                enrollment_id: enrollment.id,
-                question_id: questionId,
-                flag_id: questionFlags[0].id,
-                submitted_answer: answer,
-                is_correct: false,
-                points_awarded: 0
-              });
-          }
         }
       }
     } catch (error) {
@@ -551,6 +605,328 @@ export default function AssessmentQuestionsPage() {
     }
   };
 
+
+
+  const handleSubmitFlagPerFlag = async (questionId: string, flag: Flag) => {
+    const answer = flagAnswers[flag.id];
+    if (!answer?.trim() || !enrollment) return;
+
+    setSubmittingFlags(prev => ({ ...prev, [flag.id]: true }));
+
+    try {
+      // Prefer modern flow: write to flag_submissions if we have an active submission id
+      if (activeSubmissionId) {
+        try {
+          // Calculate correctness client-side since DB trigger may not exist
+          const userAnswer = flag.is_case_sensitive ? answer : answer.toLowerCase();
+          const flagValue = flag.is_case_sensitive ? flag.value : flag.value.toLowerCase();
+          const isCorrect = userAnswer === flagValue;
+          const pointsAwarded = isCorrect ? flag.score : 0;
+
+          // 1) Check if a row already exists for this submission and flag
+          const { data: existingRows, error: existingErr } = await supabase
+            .from('flag_submissions')
+            .select('id, question_id, flag_id, is_correct, score')
+            .eq('submission_id', activeSubmissionId)
+            .eq('flag_id', flag.id);
+
+          if (existingErr) throw existingErr;
+
+          let writeRes: any = null;
+          if (existingRows && existingRows.length > 0) {
+            // 2) Update existing row with client-computed validation
+            let updatedRow: any = null;
+            let updateErr: any = null;
+            {
+              const res = await supabase
+                .from('flag_submissions')
+                .update({ 
+                  value: answer, 
+                  submitted_flag: answer,
+                  is_correct: isCorrect,
+                  score: pointsAwarded,
+                  question_id: questionId 
+                })
+                .eq('id', existingRows[0].id)
+                .select('id, question_id, flag_id, is_correct, score')
+                .single();
+              updatedRow = res.data; updateErr = res.error;
+            }
+            if (updateErr && String(updateErr.message || '').includes('submitted_flag')) {
+              const res2 = await supabase
+                .from('flag_submissions')
+                .update({ 
+                  submitted_flag: answer, 
+                  value: answer,
+                  is_correct: isCorrect,
+                  score: pointsAwarded,
+                  question_id: questionId 
+                })
+                .eq('id', existingRows[0].id)
+                .select('id, question_id, flag_id, is_correct, score')
+                .single();
+              updatedRow = res2.data; updateErr = res2.error;
+            }
+            if (updateErr) throw updateErr;
+            writeRes = updatedRow;
+          } else {
+            // 3) Insert new row with client-computed validation
+            let insertedRow: any = null;
+            let insertErr: any = null;
+            {
+              const res = await supabase
+                .from('flag_submissions')
+                .insert({
+                  submission_id: activeSubmissionId,
+                  question_id: questionId,
+                  flag_id: flag.id,
+                  value: answer,
+                  submitted_flag: answer,
+                  is_correct: isCorrect,
+                  score: pointsAwarded
+                })
+                .select('id, question_id, flag_id, is_correct, score')
+                .single();
+              insertedRow = res.data; insertErr = res.error;
+            }
+            if (insertErr && String(insertErr.message || '').includes('submitted_flag')) {
+              const res2 = await supabase
+                .from('flag_submissions')
+                .insert({
+                  submission_id: activeSubmissionId,
+                  question_id: questionId,
+                  flag_id: flag.id,
+                  submitted_flag: answer,
+                  value: answer,
+                  is_correct: isCorrect,
+                  score: pointsAwarded
+                })
+                .select('id, question_id, flag_id, is_correct, score')
+                .single();
+              insertedRow = res2.data; insertErr = res2.error;
+            }
+            if (insertErr) throw insertErr;
+            writeRes = insertedRow;
+          }
+
+          const submissionData: Submission = {
+            id: writeRes.id,
+            question_id: questionId,
+            flag_id: flag.id,
+            submitted_answer: answer,
+            is_correct: !!writeRes.is_correct,
+            points_awarded: writeRes.score || 0,
+            submitted_at: new Date().toISOString()
+          } as any;
+
+          // Update local state: replace existing submission for this flag
+          setSubmissions(prev => {
+            const filtered = prev.filter(s => !(s.question_id === questionId && s.flag_id === flag.id));
+            return [...filtered, submissionData];
+          });
+
+          // Update score only if newly correct
+          if (submissionData.is_correct) {
+            const previouslyCorrect = submissions.some(s => s.question_id === questionId && s.flag_id === flag.id && s.is_correct);
+            if (!previouslyCorrect) {
+              const newScore = (enrollment.current_score || 0) + (submissionData.points_awarded || 0);
+              
+              // Update the correct table based on which flow we're using
+              if (activeSubmissionId) {
+                // Modern flow: Update submissions table
+                await supabase.from('submissions').update({ 
+                  current_score: newScore,
+                  total_score: newScore 
+                }).eq('id', activeSubmissionId);
+                
+                // Also update enrollment for backward compatibility if it exists
+                if (enrollment.id && enrollment.id !== activeSubmissionId) {
+                  await supabase.from('enrollments').update({ current_score: newScore }).eq('id', enrollment.id);
+                }
+              } else {
+                // Legacy flow: Update enrollments table
+                await supabase.from('enrollments').update({ current_score: newScore }).eq('id', enrollment.id);
+              }
+              
+              setEnrollment(prev => prev ? { ...prev, current_score: newScore } : null);
+            }
+          }
+
+          // Clear the input for this flag
+          setFlagAnswers(prev => ({ ...prev, [flag.id]: '' }));
+          return;
+        } catch (err) {
+          console.warn('flag_submissions write blocked by RLS, storing locally:', err);
+          // Fallback: compute correctness client-side for local storage
+          const userAnswer = flag.is_case_sensitive ? answer : answer.toLowerCase();
+          const flagValue = flag.is_case_sensitive ? flag.value : flag.value.toLowerCase();
+          const isCorrect = userAnswer === flagValue;
+          const pointsAwarded = isCorrect ? flag.score : 0;
+
+          const submissionData: Submission = {
+            id: `local_${Date.now()}`,
+            question_id: questionId,
+            flag_id: flag.id,
+            submitted_answer: answer,
+            is_correct: isCorrect,
+            points_awarded: pointsAwarded,
+            submitted_at: new Date().toISOString()
+          } as any;
+
+          // Persist locally
+          const localSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
+          localSubmissions[`${questionId}:${flag.id}`] = submissionData;
+          localStorage.setItem('flag_submissions', JSON.stringify(localSubmissions));
+
+          // Update local state
+          setSubmissions(prev => {
+            const filtered = prev.filter(s => !(s.question_id === questionId && s.flag_id === flag.id));
+            return [...filtered, submissionData];
+          });
+
+          // Update visible score (optional, to keep UX consistent)
+          if (isCorrect) {
+            const previouslyCorrect = submissions.some(s => s.question_id === questionId && s.flag_id === flag.id && s.is_correct);
+            if (!previouslyCorrect) {
+              const newScore = (enrollment.current_score || 0) + pointsAwarded;
+              
+              // Update the correct table based on which flow we're using
+              if (activeSubmissionId) {
+                // Modern flow: Update submissions table
+                await supabase.from('submissions').update({ 
+                  current_score: newScore,
+                  total_score: newScore 
+                }).eq('id', activeSubmissionId);
+                
+                // Also update enrollment for backward compatibility if it exists
+                if (enrollment.id && enrollment.id !== activeSubmissionId) {
+                  await supabase.from('enrollments').update({ current_score: newScore }).eq('id', enrollment.id);
+                }
+              } else {
+                // Legacy flow: Update enrollments table
+                await supabase.from('enrollments').update({ current_score: newScore }).eq('id', enrollment.id);
+              }
+              
+              setEnrollment(prev => prev ? { ...prev, current_score: newScore } : null);
+            }
+          }
+
+          setFlagAnswers(prev => ({ ...prev, [flag.id]: '' }));
+          return;
+        }
+      }
+
+      // See if we already have a submission for this specific flag
+      const { data: existingSubmissions } = await supabase
+        .from('user_flag_submissions')
+        .select('*')
+        .eq('enrollment_id', enrollment.id)
+        .eq('question_id', questionId)
+        .eq('flag_id', flag.id);
+
+      const existingSubmission = existingSubmissions && existingSubmissions.length > 0 ? existingSubmissions[0] : null;
+
+      // For fallback to user_flag_submissions, we need to compute correctness client-side
+      const userAnswer = flag.is_case_sensitive ? answer : answer.toLowerCase();
+      const flagValue = flag.is_case_sensitive ? flag.value : flag.value.toLowerCase();
+      const isCorrect = userAnswer === flagValue;
+      const pointsAwarded = isCorrect ? flag.score : 0;
+
+      let submissionData: any;
+      try {
+        if (existingSubmission) {
+          // Update existing submission
+          const { data: updatedData, error: updateError } = await supabase
+            .from('user_flag_submissions')
+            .update({
+              submitted_answer: answer,
+              is_correct: isCorrect,
+              points_awarded: pointsAwarded,
+              submitted_at: new Date().toISOString()
+            })
+            .eq('id', existingSubmission.id)
+            .select()
+            .single();
+          if (updateError) throw updateError;
+          submissionData = updatedData;
+        } else {
+          // Create new submission
+          const { data: newData, error: insertError } = await supabase
+            .from('user_flag_submissions')
+            .insert({
+              enrollment_id: enrollment.id,
+              question_id: questionId,
+              flag_id: flag.id,
+              submitted_answer: answer,
+              is_correct: isCorrect,
+              points_awarded: pointsAwarded,
+              submitted_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+          if (insertError) throw insertError;
+          submissionData = newData;
+        }
+      } catch (rlsError) {
+        console.warn('RLS error with user_flag_submissions, storing locally:', rlsError);
+        submissionData = {
+          id: `local_${Date.now()}`,
+          enrollment_id: enrollment.id,
+          question_id: questionId,
+          flag_id: flag.id,
+          submitted_answer: answer,
+          is_correct: isCorrect,
+          points_awarded: pointsAwarded,
+          submitted_at: new Date().toISOString()
+        };
+        const localSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
+        localSubmissions[`${questionId}:${flag.id}`] = submissionData;
+        localStorage.setItem('flag_submissions', JSON.stringify(localSubmissions));
+      }
+
+      // Update local state: allow multiple submissions per question (distinct by flag_id)
+      setSubmissions(prev => {
+        const filtered = prev.filter(s => !(s.question_id === questionId && s.flag_id === flag.id));
+        return [...filtered, submissionData];
+      });
+
+      // Update enrollment score only if newly correct (avoid double-adding)
+      if (isCorrect) {
+        const previouslyCorrect = submissions.some(s => s.question_id === questionId && s.flag_id === flag.id && s.is_correct);
+        if (!previouslyCorrect) {
+          const newScore = (enrollment.current_score || 0) + pointsAwarded;
+          
+          // Update the correct table based on which flow we're using
+          if (activeSubmissionId) {
+            // Modern flow: Update submissions table
+            await supabase.from('submissions').update({ 
+              current_score: newScore,
+              total_score: newScore 
+            }).eq('id', activeSubmissionId);
+            
+            // Also update enrollment for backward compatibility if it exists
+            if (enrollment.id && enrollment.id !== activeSubmissionId) {
+              await supabase.from('enrollments').update({ current_score: newScore }).eq('id', enrollment.id);
+            }
+          } else {
+            // Legacy flow: Update enrollments table
+            await supabase.from('enrollments').update({ current_score: newScore }).eq('id', enrollment.id);
+          }
+          
+          setEnrollment(prev => prev ? { ...prev, current_score: newScore } : null);
+        }
+      }
+
+      // Clear the input for this flag
+      setFlagAnswers(prev => ({ ...prev, [flag.id]: '' }));
+    } catch (error: any) {
+      console.error('Submission error:', error);
+      alert('An error occurred while submitting your flag. Please try again.');
+    } finally {
+      setSubmittingFlags(prev => ({ ...prev, [flag.id]: false }));
+    }
+  };
+
   const handleSubmitAssessment = async () => {
     if (!enrollment) return;
     
@@ -563,23 +939,24 @@ export default function AssessmentQuestionsPage() {
       const localSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
       Object.values(localSubmissions).forEach((localSub: any) => {
         if (localSub.enrollment_id === enrollment.id) {
-          // Only add if not already in submissions
-          const exists = allSubmissions.find(s => s.question_id === localSub.question_id);
+          // Only add if not already in submissions (match by question_id + flag_id)
+          const exists = allSubmissions.find(s => s.question_id === localSub.question_id && s.flag_id === localSub.flag_id);
           if (!exists) {
             allSubmissions.push(localSub);
           }
         }
       });
       
-      // Calculate final score and progress
+      // Calculate final score and progress (by flags)
       const totalScore = allSubmissions.reduce((sum, sub) => sum + (sub.points_awarded || 0), 0);
-      const correctAnswers = allSubmissions.filter(sub => sub.is_correct).length;
-      const progress = questions.length > 0 ? (correctAnswers / questions.length) * 100 : 0;
+      const correctFlags = allSubmissions.filter(sub => sub.is_correct).length;
+      const totalFlags = flags.length;
+      const progress = totalFlags > 0 ? (correctFlags / totalFlags) * 100 : 0;
 
       console.log('Submitting assessment with:', {
         totalScore,
-        correctAnswers,
-        totalQuestions: questions.length,
+        correctFlags,
+        totalFlags,
         progress,
         allSubmissions: allSubmissions.length
       });
@@ -630,7 +1007,8 @@ export default function AssessmentQuestionsPage() {
       // Clear localStorage submissions for this enrollment
       const remainingLocalSubmissions = JSON.parse(localStorage.getItem('flag_submissions') || '{}');
       Object.keys(remainingLocalSubmissions).forEach(key => {
-        if (remainingLocalSubmissions[key].enrollment_id === enrollment.id) {
+        const it = remainingLocalSubmissions[key];
+        if (it.enrollment_id === enrollment.id) {
           delete remainingLocalSubmissions[key];
         }
       });
@@ -642,6 +1020,101 @@ export default function AssessmentQuestionsPage() {
     } catch (error) {
       console.error('Submit assessment error:', error);
       // Add user feedback for the error
+      alert('Failed to submit assessment. Please try again.');
+    } finally {
+      setSubmittingAssessment(false);
+    }
+  };
+
+  const handleSubmitAssessmentWithTerminate = async () => {
+    if (!enrollment) return;
+
+    const confirmSubmit = window.confirm(
+      'Are you sure you want to submit your assessment? This action cannot be undone and will end your current session.'
+    );
+
+    if (!confirmSubmit) return;
+
+    setSubmittingAssessment(true);
+    try {
+      // First calculate the final score from all flag submissions
+      let finalScore = 0;
+
+      if (activeSubmissionId) {
+        // Modern flow: Get score from flag_submissions
+        const { data: flagSubs } = await supabase
+          .from('flag_submissions')
+          .select('score, is_correct')
+          .eq('submission_id', activeSubmissionId);
+
+        finalScore = flagSubs?.reduce((total, flag) => {
+          return total + (flag.is_correct ? (flag.score || 0) : 0);
+        }, 0) || 0;
+
+        console.log('Modern flow - calculated final score:', finalScore);
+      } else {
+        // Legacy flow: Calculate from submissions state
+        finalScore = submissions.reduce((sum, sub) => sum + (sub.is_correct ? (sub.points_awarded || 0) : 0), 0);
+        console.log('Legacy flow - calculated final score:', finalScore);
+      }
+
+      // Update enrollment with final score
+      const { error: enrollmentError } = await supabase
+        .from('enrollments')
+        .update({
+          status: 'COMPLETED',
+          completed_at: new Date().toISOString(),
+          final_score: finalScore,
+          current_score: finalScore,
+          progress_percentage: 100
+        })
+        .eq('id', enrollment.id);
+
+      if (enrollmentError) {
+        console.error('Error updating enrollment:', enrollmentError);
+        throw new Error('Failed to update enrollment: ' + enrollmentError.message);
+      }
+
+      // Update submission if using modern flow
+      if (activeSubmissionId) {
+        const { error: submissionError } = await supabase
+          .from('submissions')
+          .update({
+            status: 'COMPLETED',
+            completed_at: new Date().toISOString(),
+            total_score: finalScore,
+            current_score: finalScore,
+            progress_percentage: 100
+          })
+          .eq('id', activeSubmissionId);
+
+        if (submissionError) {
+          console.error('Error updating submission:', submissionError);
+          // Don't throw here, as enrollment update succeeded
+        }
+      }
+
+      // Terminate all running instances
+      try {
+        const ids = Object.keys(instanceStates);
+        await Promise.all(ids.map(id => 
+          fetch(`/api/network-instance?action=terminate&question_id=${id}&candidate_id=${user?.id}&_t=${Date.now()}`)
+        ));
+      } catch (error) {
+        console.error('Error terminating instances:', error);
+        // Don't throw here, just log the error
+      }
+
+      // Clear localStorage submissions for this enrollment
+      localStorage.removeItem('flag_submissions');
+
+      console.log('Assessment submitted successfully with final score:', finalScore);
+
+      // Redirect to results page
+      router.push(`/assessments/${assessmentId}/results`);
+
+    } catch (error) {
+      console.error('Submit assessment error:', error);
       alert('Failed to submit assessment. Please try again.');
     } finally {
       setSubmittingAssessment(false);
@@ -664,10 +1137,12 @@ export default function AssessmentQuestionsPage() {
   };
 
   const getQuestionStatus = (questionId: string) => {
-    const submission = submissions.find(s => s.question_id === questionId);
-    if (submission?.is_correct) return 'correct';
-    if (submission && !submission.is_correct) return 'incorrect';
-    if (currentAnswers[questionId]?.trim()) return 'attempted';
+    const questionFlags = flags.filter(f => f.question_id === questionId);
+    const subs = submissions.filter(s => s.question_id === questionId);
+    const hasCorrect = subs.some(s => s.is_correct);
+    const hasAny = subs.length > 0 || questionFlags.some(f => flagAnswers[f.id]?.trim());
+    if (hasCorrect) return 'correct';
+    if (hasAny) return 'incorrect';
     return 'unattempted';
   };
 
@@ -974,7 +1449,7 @@ export default function AssessmentQuestionsPage() {
     }
   }, [getQuestionById, user?.id, fetchMachineInfo]);
 
-  // Background polling for transitional states
+  // Background polling for
   useEffect(() => {
     const interval = setInterval(() => {
       const ids = Object.keys(instanceStates).filter(id => ['starting', 'stopping', 'restarting', 'pending'].includes(instanceStates[id]?.status || ''));
@@ -1008,16 +1483,6 @@ export default function AssessmentQuestionsPage() {
     }, 15000);
     return () => clearInterval(interval);
   }, [instanceStates]);
-
-  // Terminate all running instances on assessment submit
-  const originalHandleSubmitAssessment = handleSubmitAssessment;
-  const handleSubmitAssessmentWithTerminate = useCallback(async () => {
-    await originalHandleSubmitAssessment();
-    try {
-      const ids = Object.keys(instanceStates);
-      await Promise.all(ids.map(id => fetch(`/api/network-instance?action=terminate&question_id=${id}&candidate_id=${user?.id}&_t=${Date.now()}`)));
-    } catch {}
-  }, [originalHandleSubmitAssessment, instanceStates, user?.id]);
 
   if (loading) {
     return (
@@ -1074,14 +1539,14 @@ export default function AssessmentQuestionsPage() {
               <div className="p-4 border-b border-gray-border">
                 <div className="text-sm text-gray-400 mb-2">Progress</div>
                 <div className="flex items-center justify-between text-white">
-                  <span>{submissions.filter(s => s.is_correct).length}/{questions.length}</span>
+                  <span>{submissions.filter(s => s.is_correct).length}/{flags.length}</span>
                   <span>{enrollment?.current_score || 0} pts</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2 mt-2">
                   <div
                     className="bg-gradient-to-r from-neon-green to-electric-blue h-2 rounded-full transition-all duration-300"
                     style={{
-                      width: `${(submissions.filter(s => s.is_correct).length / questions.length) * 100}%`
+                      width: `${(flags.length > 0 ? (submissions.filter(s => s.is_correct).length / flags.length) * 100 : 0)}%`
                     }}
                   />
                 </div>
@@ -1378,33 +1843,39 @@ export default function AssessmentQuestionsPage() {
                   )}
                 </div>
 
-                <div className="flex space-x-3">
-                  <input
-                    type="text"
-                    value={currentAnswers[currentQuestion.id] || ''}
-                    onChange={(e) => handleAnswerChange(currentQuestion.id, e.target.value)}
-                    placeholder="Enter your flag..."
-                    className="flex-1 px-4 py-3 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-neon-green"
-                    disabled={currentSubmission?.is_correct}
-                  />
-                  <button
-                    onClick={() => handleSubmitFlag(currentQuestion.id)}
-                    disabled={
-                      !currentAnswers[currentQuestion.id]?.trim() ||
-                      submitting[currentQuestion.id] ||
-                      currentSubmission?.is_correct
-                    }
-                    className="px-6 py-3 bg-gradient-to-r from-neon-green to-electric-blue text-dark-bg font-semibold rounded-lg hover:from-green-500 hover:to-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                  >
-                    {submitting[currentQuestion.id] ? (
-                      <div className="w-5 h-5 border-2 border-dark-bg border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4 mr-2" />
-                        Submit
-                      </>
-                    )}
-                  </button>
+                {/* NEW: Multiple inputs, one per flag */}
+                <div className="space-y-3">
+                  {currentQuestionFlags.map((flag) => {
+                    const prior = submissions.find(s => s.flag_id === flag.id);
+                    const disabled = prior?.is_correct;
+                    return (
+                      <div key={flag.id} className="flex space-x-3">
+                        <input
+                          type="text"
+                          value={flagAnswers[flag.id] ?? ''}
+                          onChange={(e) => setFlagAnswers(prev => ({ ...prev, [flag.id]: e.target.value }))
+                          }
+                          placeholder={`Enter flag ${flag.id.substring(0, 6)}...`}
+                          className="flex-1 px-4 py-3 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-neon-green"
+                          disabled={disabled}
+                        />
+                        <button
+                          onClick={() => handleSubmitFlagPerFlag(currentQuestion.id, flag)}
+                          disabled={!flagAnswers[flag.id]?.trim() || submittingFlags[flag.id] || disabled}
+                          className="px-6 py-3 bg-gradient-to-r from-neon-green to-electric-blue text-dark-bg font-semibold rounded-lg hover:from-green-500 hover:to-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                        >
+                          {submittingFlags[flag.id] ? (
+                            <div className="w-5 h-5 border-2 border-dark-bg border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <>
+                              <Send className="h-4 w-4 mr-2" />
+                              Submit
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Flag info */}
@@ -1416,6 +1887,27 @@ export default function AssessmentQuestionsPage() {
                     </p>
                   </div>
                 )}
+              </div>
+
+              {/* Submit Assessment Button */}
+              <div className="mt-6 flex justify-center">
+                <button
+                  onClick={handleSubmitAssessmentWithTerminate}
+                  disabled={submittingAssessment}
+                  className="px-8 py-4 bg-gradient-to-r from-red-600 to-red-800 text-white font-bold rounded-lg hover:from-red-700 hover:to-red-900 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-lg"
+                >
+                  {submittingAssessment ? (
+                    <>
+                      <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin mr-3" />
+                      Submitting Assessment...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-5 w-5 mr-3" />
+                      Submit Assessment
+                    </>
+                  )}
+                </button>
               </div>
             </motion.div>
           </div>
