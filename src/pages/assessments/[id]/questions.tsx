@@ -106,6 +106,7 @@ interface InstanceState {
 export default function AssessmentQuestionsPage() {
   const router = useRouter();
   const { id: assessmentId } = router.query;
+  const assessmentIdParam = Array.isArray(assessmentId) ? assessmentId[0] : assessmentId; // normalize
   const supabase = createClient();
   
   const [assessment, setAssessment] = useState<Assessment | null>(null);
@@ -176,7 +177,7 @@ export default function AssessmentQuestionsPage() {
 
   const fetchData = useCallback(async () => {
     // Wait for router to be ready and assessmentId to be available
-    if (!router.isReady || !assessmentId || typeof assessmentId !== 'string') return;
+    if (!router.isReady || !assessmentIdParam || typeof assessmentIdParam !== 'string') return;
 
     try {
       // Check authentication
@@ -196,7 +197,7 @@ export default function AssessmentQuestionsPage() {
           .from('submissions')
           .select('*')
           .eq('candidate_id', user.id)
-          .eq('assessment_id', assessmentId)
+          .eq('assessment_id', assessmentIdParam)
           .eq('status', 'STARTED')
           .single();
 
@@ -225,19 +226,19 @@ export default function AssessmentQuestionsPage() {
             .from('enrollments')
             .select('*')
             .eq('user_id', user.id)
-            .eq('assessment_id', assessmentId)
+            .eq('assessment_id', assessmentIdParam)
             .single();
 
           if (enrollmentError || !enrollmentData) {
             console.error('No valid enrollment or submission found');
-            router.push(`/assessments/${assessmentId}`);
+            router.push(`/assessments/${assessmentIdParam}`);
             return;
           }
           
           // Check if enrollment is in the right state
           if (!['IN_PROGRESS', 'ENROLLED'].includes(enrollmentData.status)) {
             console.error('Invalid enrollment status:', enrollmentData.status);
-            router.push(`/assessments/${assessmentId}`);
+            router.push(`/assessments/${assessmentIdParam}`);
             return;
           }
           
@@ -247,7 +248,7 @@ export default function AssessmentQuestionsPage() {
           console.log('Using fallback enrollments flow with ID:', enrollmentId);
         } catch (e) {
           console.error('Error accessing enrollments table:', e);
-          router.push(`/assessments/${assessmentId}`);
+          router.push(`/assessments/${assessmentIdParam}`);
           return;
         }
       }
@@ -256,7 +257,7 @@ export default function AssessmentQuestionsPage() {
       const { data: assessmentData } = await supabase
         .from('assessments')
         .select('*')
-        .eq('id', assessmentId)
+        .eq('id', assessmentIdParam)
         .single();
       setAssessment(assessmentData);
 
@@ -264,7 +265,7 @@ export default function AssessmentQuestionsPage() {
       const { data: sectionsData } = await supabase
         .from('sections')
         .select('id, name, order_index')
-        .eq('assessment_id', assessmentId)
+        .eq('assessment_id', assessmentIdParam)
         .order('order_index');
       setSections(sectionsData || []);
 
@@ -360,7 +361,7 @@ export default function AssessmentQuestionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [assessmentId, router.isReady, supabase]);
+  }, [assessmentIdParam, router.isReady, supabase]);
 
   useEffect(() => {
     fetchData();

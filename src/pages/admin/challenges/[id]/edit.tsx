@@ -71,6 +71,7 @@ export default function EditChallenge() {
           section_id: q.section_id,
           flags: (q.flags || []).map((f: any) => ({ id: f.id, value: f.value, score: f.score, is_case_sensitive: !!f.is_case_sensitive, hint: f.hint || '' }))
         });
+        if (q.section_id) await loadSections(q.section_id);
       } catch (e: any) {
         console.error(e);
         setError(e?.message || 'Failed to load challenge');
@@ -119,12 +120,34 @@ export default function EditChallenge() {
         .eq('id', id);
       if (error) throw error;
 
-      // Upsert flags crudely: delete all, reinsert
+      // Upsert flags crudely: delete all, reinsert (now includes required hash)
       await supabase.from('flags').delete().eq('question_id', id);
+
+      const computeFlagHash = async (value: string, isCaseSensitive: boolean): Promise<string> => {
+        const normalized = (isCaseSensitive ? value : value.toLowerCase()).trim();
+        if (!normalized) return 'EMPTY';
+        try {
+          const data = new TextEncoder().encode(normalized);
+          const digest = await crypto.subtle.digest('SHA-256', data);
+          const bytes = Array.from(new Uint8Array(digest));
+          return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+        } catch {
+          return normalized.slice(0, 255);
+        }
+      };
+
       if (form.flags.length) {
-        await supabase.from('flags').insert(
-          form.flags.map(f => ({ question_id: id, value: f.value, score: f.score, is_case_sensitive: f.is_case_sensitive, hint: f.hint }))
-        );
+        for (const f of form.flags) {
+          const hash = await computeFlagHash(f.value, f.is_case_sensitive);
+          await supabase.from('flags').insert({
+            question_id: id,
+            value: f.value,
+            hash,
+            score: f.score,
+            is_case_sensitive: f.is_case_sensitive,
+            hint: f.hint
+          });
+        }
       }
 
       toast.success('Challenge updated');
@@ -137,41 +160,11 @@ export default function EditChallenge() {
     }
   };
 
-  if (loading) {
+  if (loading || !form) {
     return (
       <AdminLayout currentPage="challenges">
         <div className="flex items-center justify-center h-64">
           <div className="w-10 h-10 border-t-2 border-b-2 border-red-500 rounded-full animate-spin"></div>
-        </div>
-      </AdminLayout>
-    );
-  }
-
-  if (error) {
-    return (
-      <AdminLayout currentPage="challenges">
-        <div className="p-6">
-          <button className="text-gray-300 hover:text-white mb-4 flex items-center" onClick={() => router.push('/admin/challenges')}>
-            <ArrowLeft className="h-4 w-4 mr-2" /> Back to Challenges
-          </button>
-          <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
-            <p className="text-red-400">{error}</p>
-          </div>
-        </div>
-      </AdminLayout>
-    );
-  }
-
-  if (!form) {
-    return (
-      <AdminLayout currentPage="challenges">
-        <div className="p-6">
-          <button className="text-gray-300 hover:text-white mb-4 flex items-center" onClick={() => router.push('/admin/challenges')}>
-            <ArrowLeft className="h-4 w-4 mr-2" /> Back to Challenges
-          </button>
-          <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
-            <p className="text-gray-300">Challenge not found.</p>
-          </div>
         </div>
       </AdminLayout>
     );

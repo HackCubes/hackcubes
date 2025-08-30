@@ -49,7 +49,8 @@ export default function AssessmentWelcomePage() {
   const [starting, setStarting] = useState(false);
   const [hasCompletedSubmission, setHasCompletedSubmission] = useState(false);
   const router = useRouter();
-  const { id: assessmentId } = router.query;
+  const { id: rawId } = router.query;
+  const assessmentId = Array.isArray(rawId) ? rawId[0] : rawId; // normalize
   const supabase = createClient();
 
   useEffect(() => {

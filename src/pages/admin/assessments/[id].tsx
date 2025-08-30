@@ -325,6 +325,19 @@ export default function AssessmentDetailsPage() {
                   <label className="block text-sm text-gray-400 mb-1">Description</label>
                   <textarea className="w-full bg-dark-bg border border-gray-border rounded px-3 py-2 text-white" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} disabled={!editing} />
                 </div>
+                {/* New Duration field */}
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Duration (minutes)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full bg-dark-bg border border-gray-border rounded px-3 py-2 text-white"
+                    value={Number(form.duration_in_minutes) || 0}
+                    onChange={(e) => setForm({ ...form, duration_in_minutes: Math.max(1, Number(e.target.value)) })}
+                    disabled={!editing}
+                  />
+                  <p className="text-xs text-gray-400 mt-1">For 24 hours, set 1440.</p>
+                </div>
               </div>
               <div className="flex gap-6 text-gray-300">
                 <div><span className="text-gray-400">Total Challenges:</span> {totalQuestions}</div>

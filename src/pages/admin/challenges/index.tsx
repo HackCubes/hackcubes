@@ -70,6 +70,21 @@ export default function AdminChallenges() {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const supabase = createClient();
 
+  // Helper to compute a deterministic hash for a flag value
+  async function computeFlagHash(value: string, isCaseSensitive: boolean): Promise<string> {
+    const normalized = (isCaseSensitive ? value : value.toLowerCase()).trim();
+    if (!normalized) return 'EMPTY';
+    try {
+      const data = new TextEncoder().encode(normalized);
+      const digest = await crypto.subtle.digest('SHA-256', data);
+      const bytes = Array.from(new Uint8Array(digest));
+      return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch {
+      // Fallback to truncated normalized value (to satisfy NOT NULL)
+      return normalized.slice(0, 255);
+    }
+  }
+
   useEffect(() => {
     fetchQuestions();
   }, []);
@@ -242,13 +257,15 @@ export default function AdminChallenges() {
 
       if (questionError) throw questionError;
 
-      // Duplicate flags
+      // Duplicate flags (default case sensitivity true as before)
       for (const flag of original.flags) {
+        const hash = await computeFlagHash(flag.value, true);
         await supabase
           .from('flags')
           .insert({
             question_id: newQuestion.id,
             value: flag.value,
+            hash,
             score: flag.score,
             is_case_sensitive: true
           });

@@ -236,13 +236,29 @@ export default function NewChallenge() {
 
       if (questionError) throw questionError;
 
+      // Helper to compute a deterministic hash for a flag value
+      const computeFlagHash = async (value: string, isCaseSensitive: boolean): Promise<string> => {
+        const normalized = (isCaseSensitive ? value : value.toLowerCase()).trim();
+        if (!normalized) return 'EMPTY';
+        try {
+          const data = new TextEncoder().encode(normalized);
+          const digest = await crypto.subtle.digest('SHA-256', data);
+          const bytes = Array.from(new Uint8Array(digest));
+          return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+        } catch {
+          return normalized.slice(0, 255);
+        }
+      };
+
       // Create the flags
       for (const flag of formData.flags) {
+        const hash = await computeFlagHash(flag.value, flag.is_case_sensitive);
         const { error: flagError } = await supabase
           .from('flags')
           .insert({
             question_id: question.id,
             value: flag.value,
+            hash,
             score: flag.score,
             is_case_sensitive: flag.is_case_sensitive,
             hint: flag.hint
