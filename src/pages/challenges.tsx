@@ -325,6 +325,9 @@ export default function ChallengesPage() {
               <Link href="/leaderboard" className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
                 Leaderboard
               </Link>
+              <Link href="/certifications" className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
+                Certifications
+              </Link>
               <Link href="/profile" className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
                 Profile
               </Link>

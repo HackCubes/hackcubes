@@ -101,7 +101,6 @@ export default function EditChallenge() {
   const save = async () => {
     if (!form) return;
     if (!form.name.trim()) return toast.error('Name is required');
-    if (!form.description.trim()) return toast.error('Description is required');
     if (!form.section_id) return toast.error('Section is required');
 
     setSaving(true);

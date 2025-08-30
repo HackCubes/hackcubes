@@ -187,10 +187,6 @@ export default function NewChallenge() {
       toast.error('Challenge title is required');
       return false;
     }
-    if (!formData.description.trim()) {
-      toast.error('Challenge description is required');
-      return false;
-    }
     if (!selectedSection) {
       toast.error('Please select a section');
       return false;
