@@ -31,6 +31,7 @@ export const Footer: React.FC = () => {
     { label: 'Certifications', href: '/certification' },
     { label: 'Challenge', href: '/challenge' },
     { label: 'About', href: '#about' },
+    { label: 'Support', href: 'mailto:support@hackcubes.com' },
     { label: 'Contact', href: '#contact' },
   ];
 
@@ -73,7 +74,21 @@ export const Footer: React.FC = () => {
             <div className="space-y-3 text-sm text-gray-400">
               <div className="flex items-center space-x-3">
                 <Mail size={16} className="text-neon-green" />
-                <span>support@hackcubes.com</span>
+                <a 
+                  href="mailto:support@hackcubes.com" 
+                  className="hover:text-neon-green transition-colors duration-300"
+                >
+                  support@hackcubes.com
+                </a>
+              </div>
+              <div className="pt-2">
+                <a
+                  href="mailto:support@hackcubes.com?subject=Support Request - HackCubes Platform"
+                  className="inline-flex items-center gap-2 bg-neon-green/10 border border-neon-green/30 text-neon-green px-3 py-2 rounded-md text-xs font-medium hover:bg-neon-green/20 transition-all duration-300"
+                >
+                  <Mail size={12} />
+                  Quick Support
+                </a>
               </div>
               {/* Phone number commented out per request */}
               {/*

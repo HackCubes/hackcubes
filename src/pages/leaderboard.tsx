@@ -52,6 +52,7 @@ export default function LeaderboardPage() {
               <Link href="/leaderboard" className="text-neon-green px-3 py-2 rounded-md text-sm font-medium">Leaderboard</Link>
               <Link href="/certifications" className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Certifications</Link>
               <Link href="/profile" className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Profile</Link>
+              <Link href="/support" className="text-gray-300 hover:text-neon-green px-3 py-2 rounded-md text-sm font-medium transition-colors duration-300">Support</Link>
               <button onClick={handleLogout} className="ml-2 text-gray-300 hover:text-white px-3 py-2 border border-gray-700 rounded-md text-sm font-medium">Logout</button>
             </div>
           </div>

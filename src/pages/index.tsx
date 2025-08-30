@@ -29,6 +29,7 @@ import { HeroSection } from '@/components/HeroSection';
 import { TestimonialsSection } from '@/components/TestimonialsSection';
 import { SignupSection } from '@/components/SignupSection';
 import { Footer } from '@/components/Footer';
+import SupportSection from '@/components/SupportSection';
 
 export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -122,6 +123,12 @@ export default function LandingPage() {
                   >
                     Admin
                   </Link>
+                  <a
+                    href="mailto:support@hackcubes.com?subject=Support Request - HackCubes Platform"
+                    className="text-gray-300 hover:text-neon-green px-3 py-2 rounded-md text-sm font-medium transition-colors duration-300"
+                  >
+                    Support
+                  </a>
                   <button
                     onClick={async () => { await supabase.auth.signOut(); router.push('/'); }}
                     className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium border border-gray-700"
@@ -206,6 +213,12 @@ export default function LandingPage() {
                       >
                         Admin
                       </Link>
+                      <a
+                        href="mailto:support@hackcubes.com?subject=Support Request - HackCubes Platform"
+                        className="text-gray-300 hover:text-neon-green block px-3 py-2 rounded-md text-base font-medium transition-colors duration-300"
+                      >
+                        Support
+                      </a>
                       <button
                         onClick={async () => { await supabase.auth.signOut(); router.push('/'); }}
                         className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium mx-3 mt-2 text-center border border-gray-700"
@@ -439,6 +452,9 @@ export default function LandingPage() {
 
         {/* Signup Section - Restored */}
         <SignupSection />
+
+        {/* Support Section */}
+        <SupportSection />
 
         {/* Footer - Replace simple footer with full Footer component */}
         <Footer />
