@@ -13,7 +13,8 @@ import {
   Flag,
   CheckCircle,
   Eye,
-  UserPlus
+  UserPlus,
+  FileText
 } from 'lucide-react';
 import AdminLayout from '@/components/AdminLayout';
 import { createClient } from '@/lib/supabase/client';
@@ -181,7 +182,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Recent Activity */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
@@ -228,6 +229,33 @@ export default function AdminDashboard() {
                   <p className="text-gray-400">No recent activity</p>
                 </div>
               )}
+            </div>
+          </motion.div>
+
+          {/* Pending Reports */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="bg-dark-secondary border border-gray-border rounded-lg p-6"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white">Pending Reports</h2>
+              <Link 
+                href="/admin/reports" 
+                className="text-red-400 hover:text-red-300 text-sm flex items-center"
+              >
+                Review All <Eye className="h-4 w-4 ml-1" />
+              </Link>
+            </div>
+            
+            <div className="text-center py-8">
+              <div className="bg-orange-900/20 border border-orange-500/30 rounded-lg p-4 mb-4">
+                <Clock className="h-8 w-8 text-orange-400 mx-auto mb-2" />
+                <p className="text-orange-400 font-semibold">Reports Awaiting Review</p>
+                <p className="text-2xl font-bold text-white mt-1">0</p>
+              </div>
+              <p className="text-gray-400 text-sm">No pending reports at the moment</p>
             </div>
           </motion.div>
 

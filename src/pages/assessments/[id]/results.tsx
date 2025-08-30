@@ -13,7 +13,9 @@ import {
   Download,
   Share2,
   ArrowRight,
-  Star
+  Star,
+  FileText,
+  AlertCircle
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/router';
@@ -25,6 +27,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
+import { ReportSubmissionModal, ReportStatus } from '@/components/reports';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -76,6 +79,12 @@ export default function AssessmentResultsPage() {
   const [showDetailedResults, setShowDetailedResults] = useState(false);
   const [submissionCompleted, setSubmissionCompleted] = useState(false);
   const [resettingAssessment, setResettingAssessment] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportStatus, setReportStatus] = useState<any>(null);
+  const [hasPaidForCertification, setHasPaidForCertification] = useState(false);
+  const [isEnrolledInCourse, setIsEnrolledInCourse] = useState(false);
+  const [reportDeadline, setReportDeadline] = useState<Date | null>(null);
+  const [timeRemainingForReport, setTimeRemainingForReport] = useState<number>(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -98,13 +107,25 @@ export default function AssessmentResultsPage() {
           .eq('assessment_id', assessmentId)
           .single();
 
-        if (!enrollmentError && enrollmentData && enrollmentData.status === 'COMPLETED') {
+        if (enrollmentData && enrollmentData.status === 'COMPLETED') {
           setEnrollment(enrollmentData);
+          setIsEnrolledInCourse(true);
+          
+          // Calculate report deadline (24 hours from completion)
+          if (enrollmentData.completed_at) {
+            const completionTime = new Date(enrollmentData.completed_at);
+            const deadline = new Date(completionTime.getTime() + (24 * 60 * 60 * 1000)); // 24 hours later
+            setReportDeadline(deadline);
+            
+            const now = new Date();
+            const remaining = Math.max(0, deadline.getTime() - now.getTime());
+            setTimeRemainingForReport(remaining);
+          }
         } else {
           // If enrollment isn't completed (or missing), check if a submission is completed
           const { data: submissionRow } = await supabase
             .from('submissions')
-            .select('status')
+            .select('status, completed_at')
             .eq('assessment_id', assessmentId)
             .eq('candidate_id', user.id)
             .single();
@@ -112,6 +133,18 @@ export default function AssessmentResultsPage() {
           if (submissionRow?.status === 'COMPLETED') {
             // Allow results to render; we will derive scores from user_flag_submissions
             setSubmissionCompleted(true);
+            setIsEnrolledInCourse(true); // User has completed assessment, so they're enrolled
+            
+            // Calculate report deadline from submission completion
+            if (submissionRow.completed_at) {
+              const completionTime = new Date(submissionRow.completed_at);
+              const deadline = new Date(completionTime.getTime() + (24 * 60 * 60 * 1000)); // 24 hours later
+              setReportDeadline(deadline);
+              
+              const now = new Date();
+              const remaining = Math.max(0, deadline.getTime() - now.getTime());
+              setTimeRemainingForReport(remaining);
+            }
           } else {
             router.push(`/assessments/${assessmentId}`);
             return;
@@ -192,6 +225,54 @@ export default function AssessmentResultsPage() {
         }
         setSubmissions(fetchedSubmissions as any);
 
+        // Check if user has paid for certification or is enrolled in course
+        const { data: certificationData } = await supabase
+          .from('certification_purchases')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('certification_id', 'HJCPT') // Assuming HJCPT is the certification type
+          .eq('status', 'completed')
+          .single();
+
+        // Also check if user is enrolled in the course (alternative access method)
+        const { data: enrollmentCheck } = await supabase
+          .from('enrollments')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('assessment_id', assessmentId)
+          .single();
+
+        if (certificationData || enrollmentCheck) {
+          setHasPaidForCertification(true);
+          setIsEnrolledInCourse(true);
+          
+          // Check report submission status
+          const { data: reportData } = await supabase
+            .from('assessment_reports')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('assessment_id', assessmentId)
+            .single();
+
+          if (reportData) {
+            setReportStatus(reportData);
+            
+            // Set report deadline (24 hours from when assessment was completed)
+            if (enrollmentData?.completed_at) {
+              const completedAt = new Date(enrollmentData.completed_at);
+              const deadline = new Date(completedAt.getTime() + 24 * 60 * 60 * 1000);
+              setReportDeadline(deadline);
+            }
+          } else {
+            // No report submitted yet, set deadline based on assessment completion
+            if (enrollmentData?.completed_at) {
+              const completedAt = new Date(enrollmentData.completed_at);
+              const deadline = new Date(completedAt.getTime() + 24 * 60 * 60 * 1000);
+              setReportDeadline(deadline);
+            }
+          }
+        }
+
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
@@ -201,6 +282,20 @@ export default function AssessmentResultsPage() {
 
     fetchData();
   }, [assessmentId, router.isReady, supabase]);
+
+  // Update time remaining for report every minute
+  useEffect(() => {
+    if (!reportDeadline) return;
+
+    const updateTimer = () => {
+      const now = new Date();
+      const remaining = Math.max(0, reportDeadline.getTime() - now.getTime());
+      setTimeRemainingForReport(remaining);
+    };
+
+    const interval = setInterval(updateTimer, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, [reportDeadline]);
 
   const totalPointsAwarded = submissions.reduce((sum, s) => sum + (s.points_awarded || 0), 0);
 
@@ -393,6 +488,21 @@ export default function AssessmentResultsPage() {
     return `${mins}m`;
   };
 
+  const formatTimeRemaining = (milliseconds: number) => {
+    if (milliseconds <= 0) return "Time expired";
+    
+    const hours = Math.floor(milliseconds / (1000 * 60 * 60));
+    const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m remaining`;
+    } else if (minutes > 0) {
+      return `${minutes}m remaining`;
+    } else {
+      return "Less than 1 minute remaining";
+    }
+  };
+
   const generateCertificate = async () => {
     // This would integrate with a certificate generation service
     console.log('Generating certificate...');
@@ -440,7 +550,7 @@ export default function AssessmentResultsPage() {
   const displayedFinalScore = enrollment?.final_score ?? totalPointsAwarded;
   const performanceLevel = getPerformanceLevel(displayedFinalScore);
   const percentage = assessment.max_score > 0 ? (displayedFinalScore / assessment.max_score) * 100 : 0;
-  const hasPassed = percentage >= 60;
+  const hasPassed = percentage >= 1;
   const displayedProgress = enrollment?.progress_percentage ?? (questions.length > 0 ? (correctAnswers / questions.length) * 100 : 0);
   const timeTaken = enrollment?.time_taken_minutes ?? (
     enrollment?.started_at && enrollment?.completed_at
@@ -671,7 +781,217 @@ export default function AssessmentResultsPage() {
             </motion.div>
           )}
 
+          {/* Report Submission Section - Available for all enrolled users who pass */}
+          {isEnrolledInCourse && hasPassed && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
+              className="bg-dark-secondary border border-gray-border rounded-lg p-6 mb-8"
+            >
+              <div className="flex items-center mb-4">
+                <FileText className="h-6 w-6 text-neon-green mr-3" />
+                <h3 className="text-xl font-bold text-white">Assessment Report Submission</h3>
+              </div>
+              
+              {!reportStatus ? (
+                <div className="space-y-4">
+                  <p className="text-gray-300">
+                    Congratulations on completing your assessment! As part of the course requirements, 
+                    you need to submit a detailed report within 24 hours of assessment completion.
+                  </p>
+                  
+                  <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                    <h4 className="text-blue-400 font-semibold mb-2">Report Requirements:</h4>
+                    <ul className="text-blue-300 text-sm space-y-1">
+                      <li>• PDF format only</li>
+                      <li>• Detailed analysis of your problem-solving approach</li>
+                      <li>• Reflection on challenges encountered</li>
+                      <li>• Lessons learned and future objectives</li>
+                      <li>• Maximum file size: 50MB</li>
+                    </ul>
+                  </div>
+                  
+                  {timeRemainingForReport > 0 ? (
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => setShowReportModal(true)}
+                        className="flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-800 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-blue-900 transition-all duration-200"
+                      >
+                        <FileText className="h-5 w-5 mr-2" />
+                        Submit Report
+                      </button>
+                      
+                      <div className="text-sm text-gray-400 flex items-center">
+                        <Clock className="h-4 w-4 mr-1" />
+                        {formatTimeRemaining(timeRemainingForReport)}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
+                      <div className="flex items-center">
+                        <AlertCircle className="h-5 w-5 text-red-400 mr-2" />
+                        <span className="text-red-400 font-semibold">Report Submission Deadline Expired</span>
+                      </div>
+                      <p className="text-red-300 text-sm mt-2">
+                        The 24-hour deadline for report submission has passed. Please contact your instructor.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-gray-300">
+                    Your report has been submitted successfully. You will receive an email notification 
+                    once the review is complete.
+                  </p>
+                  
+                  <ReportStatus 
+                    report={{
+                      id: reportStatus.id,
+                      fileName: reportStatus.report_file_name,
+                      fileSize: reportStatus.report_file_size,
+                      submittedAt: reportStatus.submitted_at,
+                      status: reportStatus.status,
+                      finalScore: reportStatus.final_score,
+                      isPassed: reportStatus.is_passed,
+                      adminReviewNotes: reportStatus.admin_review_notes,
+                      reviewedAt: reportStatus.reviewed_at,
+                      certificateIssued: reportStatus.certificate_issued,
+                      certificateUrl: reportStatus.certificate_url
+                    }}
+                    timeline={[]}
+                  />
+                  
+                  <button
+                    onClick={() => {
+                      // Refresh report status
+                      const fetchReportStatus = async () => {
+                        const { data } = await supabase
+                          .from('assessment_reports')
+                          .select('*')
+                          .eq('user_id', user.id)
+                          .eq('assessment_id', assessmentId)
+                          .single();
+                        if (data) setReportStatus(data);
+                      };
+                      fetchReportStatus();
+                    }}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                  >
+                    Refresh Status
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          )}
 
+          {/* Report Submission Section for HJCPT Certification */}
+          {(hasPaidForCertification || isEnrolledInCourse) && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
+              className="bg-dark-secondary border border-gray-border rounded-lg p-6 mb-8"
+            >
+              <div className="flex items-center mb-4">
+                <FileText className="h-6 w-6 text-neon-green mr-3" />
+                <h3 className="text-xl font-bold text-white">HJCPT Certification Report</h3>
+              </div>
+              
+              {!reportStatus ? (
+                <div className="space-y-4">
+                  <p className="text-gray-300">
+                    Congratulations on passing your assessment! To complete your HJCPT certification, 
+                    you need to submit a detailed report within 24 hours.
+                  </p>
+                  
+                  <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                    <h4 className="text-blue-400 font-semibold mb-2">Report Requirements:</h4>
+                    <ul className="text-blue-300 text-sm space-y-1">
+                      <li>• PDF format only</li>
+                      <li>• Detailed analysis of your problem-solving approach</li>
+                      <li>• Reflection on challenges encountered</li>
+                      <li>• Future learning objectives</li>
+                      <li>• Maximum file size: 10MB</li>
+                    </ul>
+                  </div>
+                  
+                  <button
+                    onClick={() => setShowReportModal(true)}
+                    className="flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-800 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-blue-900 transition-all duration-200"
+                  >
+                    <FileText className="h-5 w-5 mr-2" />
+                    Submit Report
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <ReportStatus 
+                    report={{
+                      id: reportStatus.id,
+                      fileName: reportStatus.report_file_name,
+                      fileSize: reportStatus.report_file_size,
+                      submittedAt: reportStatus.submitted_at,
+                      status: reportStatus.status,
+                      finalScore: reportStatus.final_score,
+                      isPassed: reportStatus.is_passed,
+                      adminReviewNotes: reportStatus.admin_review_notes,
+                      reviewedAt: reportStatus.reviewed_at,
+                      certificateIssued: reportStatus.certificate_issued,
+                      certificateUrl: reportStatus.certificate_url
+                    }}
+                    timeline={[]}
+                  />
+                  
+                  <button
+                    onClick={() => {
+                      // Refresh report status
+                      const fetchReportStatus = async () => {
+                        const { data } = await supabase
+                          .from('assessment_reports')
+                          .select('*')
+                          .eq('user_id', user.id)
+                          .eq('assessment_id', assessmentId)
+                          .single();
+                        if (data) setReportStatus(data);
+                      };
+                      fetchReportStatus();
+                    }}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                  >
+                    Refresh Status
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* Report Submission Modal */}
+          {showReportModal && (
+            <ReportSubmissionModal
+              enrollmentId={enrollment?.id || 'unknown'}
+              assessmentId={assessmentId as string}
+              assessmentName={assessment?.name || 'Assessment'}
+              reportDue={reportDeadline?.toISOString() || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()}
+              timeRemaining={timeRemainingForReport}
+              onSubmissionSuccess={() => {
+                setShowReportModal(false);
+                // Refresh report status after successful submission
+                const fetchReportStatus = async () => {
+                  const { data } = await supabase
+                    .from('assessment_reports')
+                    .select('*')
+                    .eq('user_id', user.id)
+                    .eq('assessment_id', assessmentId)
+                    .single();
+                  if (data) setReportStatus(data);
+                };
+                fetchReportStatus();
+              }}
+              onClose={() => setShowReportModal(false)}
+            />
+          )}
 
           {/* What's Next */}
           <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
