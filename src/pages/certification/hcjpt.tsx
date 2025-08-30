@@ -29,12 +29,15 @@ import {
 import { CubeBackground } from '@/components/CubeBackground';
 import { Footer } from '@/components/Footer';
 import { HackCubesLogo } from '@/components/icons/HackCubesLogo';
+import { PaymentModal } from '@/components/payments';
 import { createClient } from '@/lib/supabase/client';
 
 export default function HCJPTCertificationPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
   const [hasVoucher, setHasVoucher] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [user, setUser] = useState<any>(null);
   const supabase = createClient();
   const router = useRouter();
   const HJCPT_ASSESSMENT_ID = '533d4e96-fe35-4540-9798-162b3f261572';
@@ -49,6 +52,7 @@ export default function HCJPTCertificationPage() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return; // show default Buy Now for unauthenticated
+      setUser(user);
       const { data: invitation } = await supabase
         .from('assessment_invitations')
         .select('id, status')
@@ -179,6 +183,29 @@ export default function HCJPTCertificationPage() {
       rating: 5
     }
   ];
+
+  const handlePaymentSuccess = async () => {
+    // Refresh the voucher status after successful payment
+    if (user) {
+      const { data: invitation } = await supabase
+        .from('assessment_invitations')
+        .select('id, status')
+        .eq('assessment_id', HJCPT_ASSESSMENT_ID)
+        .eq('email', user.email)
+        .single();
+      setHasVoucher(!!invitation && invitation.status === 'accepted');
+    }
+    setIsPaymentModalOpen(false);
+  };
+
+  const handleBuyNow = () => {
+    if (!user) {
+      // Redirect to sign in
+      router.push('/auth/signin?redirect=/certification/hcjpt');
+      return;
+    }
+    setIsPaymentModalOpen(true);
+  };
 
   return (
     <div className="relative min-h-screen bg-dark-bg text-white overflow-x-hidden">
@@ -332,7 +359,10 @@ export default function HCJPTCertificationPage() {
                   </button>
                 </Link>
               ) : (
-                <button className="px-8 py-4 bg-gradient-to-r from-neon-green to-green-500 text-dark-bg font-bold rounded-lg text-lg hover:scale-105 transition-all duration-300 shadow-lg shadow-neon-green/30">
+                <button 
+                  onClick={handleBuyNow}
+                  className="px-8 py-4 bg-gradient-to-r from-neon-green to-green-500 text-dark-bg font-bold rounded-lg text-lg hover:scale-105 transition-all duration-300 shadow-lg shadow-neon-green/30"
+                >
                   Buy Now - $100
                 </button>
               )}
@@ -608,8 +638,11 @@ export default function HCJPTCertificationPage() {
                   <p className="text-lg text-gray-300 mb-6">
                     Earn your HCJPT and take your first step into professional ethical hacking.
                   </p>
-                  <button className="px-8 py-4 bg-gradient-to-r from-neon-green to-green-500 text-dark-bg font-bold rounded-lg text-lg hover:scale-105 transition-all duration-300 shadow-lg shadow-neon-green/30">
-                    Buy Now / Enroll
+                  <button 
+                    onClick={handleBuyNow}
+                    className="px-8 py-4 bg-gradient-to-r from-neon-green to-green-500 text-dark-bg font-bold rounded-lg text-lg hover:scale-105 transition-all duration-300 shadow-lg shadow-neon-green/30"
+                  >
+                    {hasVoucher ? 'Start Exam' : 'Buy Now / Enroll'}
                   </button>
                 </div>
               </div>
@@ -699,6 +732,17 @@ export default function HCJPTCertificationPage() {
         {/* Footer */}
         <Footer />
       </motion.div>
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        certificationId="hcjpt"
+        certificationName="HCJPT"
+        amount={100}
+        currency="USD"
+        onSuccess={handlePaymentSuccess}
+      />
     </div>
   );
 }

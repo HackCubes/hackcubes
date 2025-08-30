@@ -9,6 +9,7 @@ import { CubeBackground } from '@/components/CubeBackground';
 import { Footer } from '@/components/Footer';
 import { HackCubesLogo } from '@/components/icons/HackCubesLogo';
 import { PricingSection } from '@/components/PricingSection';
+import { PaymentModal } from '@/components/payments';
 import { createClient } from '@/lib/supabase/client';
 
 export default function CertificationsPage() {
@@ -16,6 +17,7 @@ export default function CertificationsPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [hasVoucher, setHasVoucher] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const HJCPT_ASSESSMENT_ID = '533d4e96-fe35-4540-9798-162b3f261572';
 
   const certifications = [
@@ -115,6 +117,41 @@ export default function CertificationsPage() {
     };
     init();
   }, [supabase]);
+
+  const handlePaymentSuccess = async () => {
+    // Refresh the voucher status after successful payment
+    if (user) {
+      const { data: invitation } = await supabase
+        .from('assessment_invitations')
+        .select('id, status')
+        .eq('assessment_id', HJCPT_ASSESSMENT_ID)
+        .eq('email', user.email)
+        .single();
+      setHasVoucher(!!invitation && invitation.status === 'accepted');
+    }
+    setIsPaymentModalOpen(false);
+  };
+
+  const handleGetStarted = (cert: any) => {
+    if (cert.id === 'hcjpt') {
+      if (!user) {
+        // Redirect to sign in
+        router.push('/auth/signin?redirect=/certification/index');
+        return;
+      }
+      
+      if (hasVoucher) {
+        // Redirect to exam
+        router.push(`/assessments/${HJCPT_ASSESSMENT_ID}`);
+      } else {
+        // Open payment modal
+        setIsPaymentModalOpen(true);
+      }
+    } else {
+      // Navigate to certification page
+      router.push(cert.link);
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -312,12 +349,13 @@ export default function CertificationsPage() {
                           </button>
                         </Link>
                       ) : (
-                        <Link href={cert.link}>
-                          <button className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-neon-green to-green-500 text-dark-bg font-semibold rounded-lg hover:scale-105 transition-all duration-300">
-                            <span>Get Started</span>
-                            <ChevronRight className="w-4 h-4" />
-                          </button>
-                        </Link>
+                        <button 
+                          onClick={() => handleGetStarted(cert)}
+                          className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-neon-green to-green-500 text-dark-bg font-semibold rounded-lg hover:scale-105 transition-all duration-300"
+                        >
+                          <span>{cert.id === 'hcjpt' ? 'Buy Now' : 'Get Started'}</span>
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
                       )
                     ) : (
                       <button className="flex items-center space-x-2 px-4 py-2 bg-gray-700 text-gray-400 font-semibold rounded-lg cursor-not-allowed">
@@ -403,6 +441,17 @@ export default function CertificationsPage() {
         {/* Footer */}
         <Footer />
       </motion.div>
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        certificationId="hcjpt"
+        certificationName="HCJPT"
+        amount={100}
+        currency="USD"
+        onSuccess={handlePaymentSuccess}
+      />
     </div>
   );
 }
