@@ -232,9 +232,6 @@ export default function Dashboard() {
               </Link>
             </div>
             <div className="flex items-center space-x-4">
-              <Link href="/challenges" className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
-                Challenges
-              </Link>
               <Link href="/learning-paths" className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
                 Learning Paths
               </Link>
@@ -341,7 +338,7 @@ export default function Dashboard() {
                 <BookOpen className="h-5 w-5 mr-2 text-neon-green" />
                 Ongoing Assessments
               </h2>
-              <Link href="/challenges" className="text-neon-green hover:text-electric-blue text-sm">
+              <Link href="/certifications" className="text-neon-green hover:text-electric-blue text-sm">
                 View All
               </Link>
             </div>
@@ -384,10 +381,10 @@ export default function Dashboard() {
                 <BookOpen className="h-12 w-12 text-gray-600 mx-auto mb-4" />
                 <p className="text-gray-400">No ongoing assessments</p>
                 <Link 
-                  href="/challenges"
+                  href="/certifications"
                   className="text-neon-green hover:text-electric-blue text-sm font-medium"
                 >
-                  Start a new challenge
+                  Start a certification journey
                 </Link>
               </div>
             )}
@@ -437,10 +434,10 @@ export default function Dashboard() {
                 <TrendingUp className="h-12 w-12 text-gray-600 mx-auto mb-4" />
                 <p className="text-gray-400">No recent activity</p>
                 <Link 
-                  href="/challenges"
+                  href="/certifications"
                   className="text-neon-green hover:text-electric-blue text-sm font-medium"
                 >
-                  Start solving challenges
+                  Start working on certifications
                 </Link>
               </div>
             )}
@@ -491,11 +488,11 @@ export default function Dashboard() {
         >
           <h2 className="text-xl font-bold text-white mb-6">Quick Actions</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Link href="/challenges" className="group">
+            <Link href="/certifications" className="group">
               <div className="bg-dark-secondary border border-gray-border rounded-lg p-6 hover:border-neon-green transition-colors">
                 <Target className="h-8 w-8 text-neon-green mb-4" />
-                <h3 className="font-semibold text-white mb-2">Browse Challenges</h3>
-                <p className="text-gray-400 text-sm">Explore CTF challenges across different categories</p>
+                <h3 className="font-semibold text-white mb-2">Browse Certifications</h3>
+                <p className="text-gray-400 text-sm">Explore certification programs with integrated challenges</p>
               </div>
             </Link>
 
