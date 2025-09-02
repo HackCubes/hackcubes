@@ -144,7 +144,7 @@ export default function OrdersPage() {
           >
             <Package className="w-16 h-16 text-gray-600 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-white mb-2">No Orders Yet</h3>
-            <p className="text-gray-400 mb-6">You haven't purchased any certifications yet.</p>
+            <p className="text-gray-400 mb-6">You haven&apos;t purchased any certifications yet.</p>
             <Link href="/certification">
               <button className="px-6 py-3 bg-gradient-to-r from-neon-green to-green-500 text-dark-bg font-semibold rounded-lg hover:scale-105 transition-all duration-300">
                 Browse Certifications
