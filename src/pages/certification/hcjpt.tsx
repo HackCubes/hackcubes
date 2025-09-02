@@ -739,8 +739,8 @@ export default function HCJPTCertificationPage() {
         onClose={() => setIsPaymentModalOpen(false)}
         certificationId="hcjpt"
         certificationName="HCJPT"
-        amount={100}
-        currency="USD"
+        amount={1}
+        currency="INR"
         onSuccess={handlePaymentSuccess}
       />
     </div>

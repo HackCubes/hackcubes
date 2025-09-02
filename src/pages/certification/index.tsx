@@ -18,6 +18,7 @@ export default function CertificationsPage() {
   const [user, setUser] = useState<any>(null);
   const [hasVoucher, setHasVoucher] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const HJCPT_ASSESSMENT_ID = '533d4e96-fe35-4540-9798-162b3f261572';
 
   const certifications = [
@@ -130,6 +131,12 @@ export default function CertificationsPage() {
       setHasVoucher(!!invitation && invitation.status === 'accepted');
     }
     setIsPaymentModalOpen(false);
+    setShowSuccessMessage(true);
+    
+    // Redirect to assessment after 3 seconds
+    setTimeout(() => {
+      router.push(`/assessments/${HJCPT_ASSESSMENT_ID}`);
+    }, 3000);
   };
 
   const handleGetStarted = (cert: any) => {
@@ -441,6 +448,30 @@ export default function CertificationsPage() {
         {/* Footer */}
         <Footer />
       </motion.div>
+
+      {/* Success Message */}
+      {showSuccessMessage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-dark-secondary border border-neon-green rounded-lg p-8 max-w-md w-full mx-4 text-center"
+          >
+            <div className="w-16 h-16 bg-neon-green/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Shield className="w-8 h-8 text-neon-green" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-4">Payment Successful!</h2>
+            <p className="text-gray-300 mb-6">
+              Congratulations! You now have access to the HCJPT certification exam.
+              You will be redirected to the assessment page shortly.
+            </p>
+            <div className="flex items-center justify-center space-x-2 text-sm text-gray-400">
+              <div className="w-2 h-2 bg-neon-green rounded-full animate-pulse"></div>
+              <span>Redirecting to assessment...</span>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Payment Modal */}
       <PaymentModal

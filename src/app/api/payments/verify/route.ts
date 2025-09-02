@@ -12,8 +12,15 @@ export async function POST(request: NextRequest) {
       certificationId,
     } = body;
 
+    console.log('🔍 Payment verification started:', {
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      certificationId
+    });
+
     // Validate required fields
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      console.error('❌ Missing payment verification fields');
       return NextResponse.json(
         { error: 'Missing required payment verification fields' },
         { status: 400 }
@@ -40,11 +47,14 @@ export async function POST(request: NextRequest) {
       .digest('hex');
 
     if (expected_signature !== razorpay_signature) {
+      console.error('❌ Invalid payment signature');
       return NextResponse.json(
         { error: 'Invalid payment signature' },
         { status: 400 }
       );
     }
+
+    console.log('✅ Payment signature verified for user:', user.email);
 
     // Update payment order status
     const { error: updateError } = await supabase
@@ -70,7 +80,7 @@ export async function POST(request: NextRequest) {
       .select('id, status')
       .eq('assessment_id', HJCPT_ASSESSMENT_ID)
       .eq('email', user.email)
-      .single();
+      .maybeSingle();
 
     if (existingInvitation) {
       // Update existing invitation
@@ -86,14 +96,13 @@ export async function POST(request: NextRequest) {
         console.error('Error updating invitation:', inviteUpdateError);
       }
     } else {
-      // Create new invitation
+      // Create new invitation (omit created_at to match schema)
       const { error: inviteError } = await supabase
         .from('assessment_invitations')
         .insert({
           assessment_id: HJCPT_ASSESSMENT_ID,
           email: user.email,
           status: 'accepted',
-          created_at: new Date().toISOString(),
           accepted_at: new Date().toISOString(),
         });
 
@@ -115,7 +124,7 @@ export async function POST(request: NextRequest) {
       .select('id, expires_at')
       .eq('user_id', user.id)
       .eq('assessment_id', HJCPT_ASSESSMENT_ID)
-      .single();
+      .maybeSingle();
 
     if (existingEnrollment) {
       // Update existing enrollment - extend expiry if current expiry is sooner than 1 year from now
@@ -153,8 +162,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Record the purchase
-    const { error: purchaseError } = await supabase
+    // Record the purchase (use request body values if provided, else fallbacks)
+    const purchaseAmount = Number(body.amount);
+    const purchaseCurrency = typeof body.currency === 'string' ? body.currency : 'USD';
+
+    console.log('💰 Recording purchase in certification_purchases table...');
+    console.log('Purchase data:', {
+      user_id: user.id,
+      user_email: user.email,
+      certification_id: certificationId,
+      order_id: razorpay_order_id,
+      payment_id: razorpay_payment_id,
+      amount: Number.isFinite(purchaseAmount) ? purchaseAmount : 1,
+      currency: purchaseCurrency,
+      status: 'completed',
+      purchased_at: new Date().toISOString(),
+    });
+
+    // Set valid_until to 1 year from now (for certification validity)
+    const validUntil = new Date();
+    validUntil.setFullYear(validUntil.getFullYear() + 1);
+
+    const { data: purchaseData, error: purchaseError } = await supabase
       .from('certification_purchases')
       .insert({
         user_id: user.id,
@@ -162,15 +191,84 @@ export async function POST(request: NextRequest) {
         certification_id: certificationId,
         order_id: razorpay_order_id,
         payment_id: razorpay_payment_id,
-        amount: body.amount || 100, // Default to $100 for HJCPT
-        currency: body.currency || 'USD',
+        amount: Number.isFinite(purchaseAmount) ? purchaseAmount : 1,
+        currency: purchaseCurrency,
         status: 'completed',
         purchased_at: new Date().toISOString(),
-      });
+        valid_until: validUntil.toISOString(), // Add certification validity
+      })
+      .select();
 
     if (purchaseError) {
-      console.error('Error recording purchase:', purchaseError);
+      console.error('❌ Error recording purchase:', purchaseError);
+      console.error('Full purchase error details:', JSON.stringify(purchaseError, null, 2));
+      // Don't fail the payment if purchase recording fails, but log it heavily
+    } else {
+      console.log('✅ Purchase recorded successfully:', purchaseData);
     }
+
+    // Send enrollment email notification
+    try {
+      // Get user profile for personalized email
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('first_name, last_name')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      const userName = profile 
+        ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() 
+        : undefined;
+
+      // Send enrollment email
+      const emailResponse = await fetch(`${request.url.split('/api')[0]}/api/emails/certification-enrolled`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: user.email,
+          name: userName,
+          certificationCode: 'HCJPT',
+          assessmentId: HJCPT_ASSESSMENT_ID,
+        }),
+      });
+
+      if (!emailResponse.ok) {
+        console.warn('Failed to send enrollment email:', await emailResponse.text());
+      } else {
+        console.log('Enrollment email sent successfully to:', user.email);
+      }
+
+      // Send payment success email
+      const paymentEmailResponse = await fetch(`${request.url.split('/api')[0]}/api/emails/payment-success`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: user.email,
+          name: userName,
+          certificationCode: 'HCJPT',
+          amount: Number.isFinite(purchaseAmount) ? purchaseAmount : 1,
+          currency: purchaseCurrency,
+          orderId: razorpay_order_id,
+          paymentId: razorpay_payment_id,
+          assessmentId: HJCPT_ASSESSMENT_ID,
+        }),
+      });
+
+      if (!paymentEmailResponse.ok) {
+        console.warn('Failed to send payment success email:', await paymentEmailResponse.text());
+      } else {
+        console.log('Payment success email sent successfully to:', user.email);
+      }
+    } catch (emailError) {
+      console.warn('Error sending enrollment email:', emailError);
+      // Don't fail the payment if email fails
+    }
+
+    console.log('🎉 Payment verification completed successfully for:', user.email);
 
     return NextResponse.json({
       success: true,

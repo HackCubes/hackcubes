@@ -10,12 +10,12 @@ const razorpay = new Razorpay({
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { amount, currency = 'USD', certificationId, userId } = body;
+    const { amount, currency = 'USD', certificationId } = body;
 
     // Validate required fields
-    if (!amount || !certificationId || !userId) {
+    if (amount === undefined || amount === null || !certificationId) {
       return NextResponse.json(
-        { error: 'Missing required fields: amount, certificationId, userId' },
+        { error: 'Missing required fields: amount, certificationId' },
         { status: 400 }
       );
     }
@@ -48,30 +48,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Convert to subunits for Razorpay (paise for INR)
+    let amountSubunits = Math.round(Number(amount) * 100);
+    if (!Number.isFinite(amountSubunits)) {
+      return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
+    }
+
+    if (amountSubunits < 100) amountSubunits = 100;
+
     // Create Razorpay order
     const options = {
-      amount: amount * 100, // Razorpay expects amount in paise (smallest currency unit)
-      currency: currency,
+      amount: amountSubunits,
+      currency,
       receipt: `cert_${certificationId}_${Date.now()}`,
       notes: {
         certificationId,
-        userId,
+        userId: user.id,
         userEmail: user.email,
       },
     } as any;
 
     const order = await razorpay.orders.create(options) as any;
 
-    // Store order details in database
+    // Store order details in database (store base units for readability)
     const { error: dbError } = await supabase
       .from('payment_orders')
       .insert({
         order_id: order.id,
-        user_id: userId,
+        user_id: user.id,
         user_email: user.email,
         certification_id: certificationId,
-        amount: amount,
-        currency: currency,
+        amount: amountSubunits / 100,
+        currency,
         status: 'created',
         razorpay_order_id: order.id,
         created_at: new Date().toISOString(),
@@ -92,10 +100,10 @@ export async function POST(request: NextRequest) {
       },
     });
 
-  } catch (error) {
-    console.error('Payment order creation error:', error);
+  } catch (error: any) {
+    console.error('Payment order creation error:', error?.message || error);
     return NextResponse.json(
-      { error: 'Failed to create payment order' },
+      { error: 'Failed to create payment order', details: error?.message || undefined },
       { status: 500 }
     );
   }

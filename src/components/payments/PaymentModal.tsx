@@ -74,7 +74,6 @@ export default function PaymentModal({
           amount,
           currency,
           certificationId,
-          userId: 'user', // This will be validated on the server side
         }),
       });
 
@@ -120,10 +119,12 @@ export default function PaymentModal({
             
             if (verifyData.success) {
               setPaymentStatus('success');
+              setIsProcessing(false);
+              // Call onSuccess but don't close immediately
               setTimeout(() => {
                 onSuccess();
-                onClose();
-              }, 2000);
+              }, 1000);
+              // Don't auto-close - let user see success message
             } else {
               throw new Error('Payment verification failed');
             }
@@ -200,9 +201,28 @@ export default function PaymentModal({
           >
             <CheckCircle className="w-16 h-16 text-neon-green mx-auto mb-4" />
             <h3 className="text-xl font-bold text-white mb-2">Payment Successful!</h3>
-            <p className="text-gray-300">
+            <p className="text-gray-300 mb-6">
               You now have access to the {certificationName} certification exam.
+              Check your email for payment confirmation and order details.
             </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  onClose();
+                  // Trigger redirect after modal closes
+                  setTimeout(() => window.location.href = `/assessments/533d4e96-fe35-4540-9798-162b3f261572`, 100);
+                }}
+                className="w-full py-3 bg-gradient-to-r from-neon-green to-green-500 text-dark-bg font-bold rounded-lg hover:scale-105 transition-all duration-300"
+              >
+                Start Assessment Now
+              </button>
+              <button
+                onClick={onClose}
+                className="w-full py-2 border border-gray-border text-gray-300 rounded-lg hover:bg-dark-bg transition-colors"
+              >
+                Continue Browsing
+              </button>
+            </div>
           </motion.div>
         )}
 
