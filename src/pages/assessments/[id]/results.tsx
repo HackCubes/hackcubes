@@ -550,13 +550,26 @@ export default function AssessmentResultsPage() {
   const displayedFinalScore = enrollment?.final_score ?? totalPointsAwarded;
   const performanceLevel = getPerformanceLevel(displayedFinalScore);
   const percentage = assessment.max_score > 0 ? (displayedFinalScore / assessment.max_score) * 100 : 0;
-  const hasPassed = percentage >= 1;
+  const hasPassed = percentage >= 60;
   const displayedProgress = enrollment?.progress_percentage ?? (questions.length > 0 ? (correctAnswers / questions.length) * 100 : 0);
   const timeTaken = enrollment?.time_taken_minutes ?? (
     enrollment?.started_at && enrollment?.completed_at
       ? Math.round((new Date(enrollment.completed_at).getTime() - new Date(enrollment.started_at).getTime()) / 60000)
       : 0
   );
+
+  // Determine final result label and color based on report review status
+  const resultStatus = (() => {
+    if (percentage < 60) return { label: 'Fail', color: 'text-red-400' };
+    // Score >= 60 → wait for report and admin review
+    if (!reportStatus) return { label: 'Pending', color: 'text-yellow-400' };
+    const status = (reportStatus.status || '').toLowerCase();
+    const isPassed = reportStatus.is_passed === true;
+    const isFailed = reportStatus.is_passed === false;
+    if (isPassed || status === 'approved' || status === 'passed') return { label: 'Pass', color: 'text-green-400' };
+    if (isFailed || status === 'rejected' || status === 'failed') return { label: 'Fail', color: 'text-red-400' };
+    return { label: 'Pending', color: 'text-yellow-400' };
+  })();
 
   const chartData = {
     labels: ['Correct', 'Incorrect', 'Unanswered'],
@@ -630,8 +643,8 @@ export default function AssessmentResultsPage() {
                 <div className="text-4xl font-bold text-white mb-2">
                   {displayedFinalScore}<span className="text-2xl text-gray-400">/{assessment.max_score}</span>
                 </div>
-                <div className={`text-2xl font-semibold ${hasPassed ? 'text-green-400' : 'text-red-400'}`}>
-                  {percentage.toFixed(1)}% ({hasPassed ? 'Pass' : 'Fail'})
+                <div className={`text-2xl font-semibold ${resultStatus.color}`}>
+                  {percentage.toFixed(1)}% ({resultStatus.label})
                 </div>
               </div>
               <div className={`text-lg font-semibold ${performanceLevel.color}`}>
@@ -782,7 +795,7 @@ export default function AssessmentResultsPage() {
           )}
 
           {/* Report Submission Section - Available for all enrolled users who pass */}
-          {isEnrolledInCourse && hasPassed && (
+          {/* {isEnrolledInCourse && hasPassed && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -884,10 +897,10 @@ export default function AssessmentResultsPage() {
                 </div>
               )}
             </motion.div>
-          )}
+          )} */}
 
           {/* Report Submission Section for HJCPT Certification */}
-          {(hasPaidForCertification || isEnrolledInCourse) && (
+          {((hasPaidForCertification || isEnrolledInCourse) && hasPassed) && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1036,7 +1049,7 @@ export default function AssessmentResultsPage() {
           <div className="flex justify-center space-x-4 mt-8">
             <button
               onClick={handleStartOver}
-              disabled={resettingAssessment}
+              disabled={resettingAssessment || (assessment && (assessment as any).allow_reattempts === false)}
               className="px-6 py-3 bg-gradient-to-r from-orange-600 to-orange-800 text-white font-bold rounded-lg hover:from-orange-700 hover:to-orange-900 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               {resettingAssessment ? (

@@ -106,6 +106,53 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Create or update enrollment with 1-year expiry
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 1); // 1 year from now
+
+    const { data: existingEnrollment } = await supabase
+      .from('enrollments')
+      .select('id, expires_at')
+      .eq('user_id', user.id)
+      .eq('assessment_id', HJCPT_ASSESSMENT_ID)
+      .single();
+
+    if (existingEnrollment) {
+      // Update existing enrollment - extend expiry if current expiry is sooner than 1 year from now
+      const currentExpiry = new Date(existingEnrollment.expires_at);
+      const newExpiry = currentExpiry > expiryDate ? currentExpiry : expiryDate;
+      
+      const { error: enrollmentUpdateError } = await supabase
+        .from('enrollments')
+        .update({
+          expires_at: newExpiry.toISOString(),
+          status: 'ENROLLED',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingEnrollment.id);
+
+      if (enrollmentUpdateError) {
+        console.error('Error updating enrollment:', enrollmentUpdateError);
+      }
+    } else {
+      // Create new enrollment with 1-year expiry
+      const { error: enrollmentError } = await supabase
+        .from('enrollments')
+        .insert({
+          user_id: user.id,
+          assessment_id: HJCPT_ASSESSMENT_ID,
+          status: 'ENROLLED',
+          expires_at: expiryDate.toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+      if (enrollmentError) {
+        console.error('Error creating enrollment:', enrollmentError);
+        // Don't fail the payment if enrollment creation fails, but log it
+      }
+    }
+
     // Record the purchase
     const { error: purchaseError } = await supabase
       .from('certification_purchases')

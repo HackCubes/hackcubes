@@ -15,7 +15,8 @@ import {
   BookOpen,
   LogOut,
   Bell,
-  FileText
+  FileText,
+  Calendar
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
@@ -40,6 +41,7 @@ const navigation = [
   { name: 'Challenges', href: '/admin/challenges', icon: Target, current: false },
   { name: 'Assessments', href: '/admin/assessments', icon: BookOpen, current: false },
   { name: 'Certifications', href: '/admin/certifications', icon: Shield, current: false },
+  { name: 'Enrollments', href: '/admin/enrollments', icon: Calendar, current: false },
   { name: 'Reports', href: '/admin/reports', icon: FileText, current: false },
   { name: 'Users', href: '/admin/users', icon: Users, current: false },
   { name: 'Analytics', href: '/admin/analytics', icon: BarChart3, current: false },

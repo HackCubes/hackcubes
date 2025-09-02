@@ -26,6 +26,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       no_of_questions,
       max_score,
       is_public,
+      allow_reattempts,
     } = req.body || {};
 
     const updatePayload: Record<string, any> = {};
@@ -37,6 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (typeof no_of_questions === 'number') updatePayload.no_of_questions = no_of_questions;
     if (typeof max_score === 'number') updatePayload.max_score = max_score;
     if (typeof is_public === 'boolean') updatePayload.is_public = is_public;
+    if (typeof allow_reattempts === 'boolean') updatePayload.allow_reattempts = allow_reattempts;
 
     if (Object.keys(updatePayload).length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });

@@ -490,6 +490,20 @@ export default function AssessmentWelcomePage() {
     }
   };
 
+  // Format duration in minutes to a human-friendly string (prefer hours when possible)
+  const formatDuration = (minutes: number | undefined) => {
+    if (!minutes || minutes <= 0) return '—';
+    if (minutes % 60 === 0) {
+      const hours = minutes / 60;
+      return `${hours} hour${hours === 1 ? '' : 's'}`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return hours > 0
+      ? `${hours} hour${hours === 1 ? '' : 's'} ${mins} min`
+      : `${minutes} minutes`;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-dark-bg flex items-center justify-center">
@@ -591,7 +605,7 @@ export default function AssessmentWelcomePage() {
                     <Clock className="h-5 w-5 text-gray-400 mr-2" />
                     <div>
                       <p className="text-sm text-gray-400">Duration</p>
-                      <p className="text-white font-semibold">{assessment.duration_in_minutes} minutes</p>
+                      <p className="text-white font-semibold">{formatDuration(assessment.duration_in_minutes)}</p>
                     </div>
                   </div>
                   
@@ -627,12 +641,31 @@ export default function AssessmentWelcomePage() {
                   <h3 className="text-sm font-semibold text-gray-300 mb-2">Active Period</h3>
                   <div className="space-y-1">
                     <p className="text-sm text-gray-400">
-                      <span className="font-medium">Starts:</span> {formatDate(assessment.active_from)}
+                      {/* <span className="font-medium">Starts:</span> {formatDate(assessment.active_from)} */}
                     </p>
                     <p className="text-sm text-gray-400">
-                      <span className="font-medium">Ends:</span> {formatDate(assessment.active_to)}
+                      {/* <span className="font-medium">Ends:</span> {formatDate(assessment.active_to)} */}
+                    </p>
+                    <p className="text-sm text-gray-400 mt-2">
+                      <span className="font-medium">Access validity:</span> 365 days from your date of enrollment.
                     </p>
                   </div>
+                </div>
+
+                {/* Time Requirements */}
+                <div className="border-t border-gray-border pt-4 mt-4">
+                  <h3 className="text-sm font-semibold text-gray-300 mb-2">Time Requirements</h3>
+                  <ul className="list-disc list-inside space-y-1 text-sm text-gray-300">
+                    <li>
+                      Exam duration: You have <span className="font-medium">24 hours</span> to attempt the exam once you start.
+                    </li>
+                    <li>
+                      Passing criteria: A score of <span className="font-medium">60% or above</span> is required to qualify for reporting.
+                    </li>
+                    <li>
+                      Report submission: If you pass (≥ 60%), you must submit a <span className="font-medium">report within 24 hours</span> after completing the exam.
+                    </li>
+                  </ul>
                 </div>
               </div>
 
@@ -690,7 +723,7 @@ export default function AssessmentWelcomePage() {
                     </Link>
                     <button
                       onClick={handleRestartAssessment}
-                      disabled={starting}
+                      disabled={starting || (assessment && (assessment as any).allow_reattempts === false)}
                       className="w-full flex items-center justify-center px-4 py-3 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 transition-all duration-200 disabled:opacity-50"
                     >
                       {starting ? (
@@ -721,6 +754,9 @@ export default function AssessmentWelcomePage() {
                           <p className="text-blue-300 text-sm mb-3">
                             You have already started this assessment on {new Date(existingSubmission.started_at).toLocaleDateString()}.
                           </p>
+                          {assessment && (assessment as any).allow_reattempts === false && (
+                            <p className="text-yellow-300 text-sm">Re-attempts are currently disabled by the administrator.</p>
+                          )}
                         </div>
                         
                         <button

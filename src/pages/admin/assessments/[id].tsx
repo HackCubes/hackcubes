@@ -9,9 +9,10 @@ import ChallengeLibraryModal from '@/components/ChallengeLibraryModal';
 import InviteCandidateModal from '@/components/InviteCandidateModal';
 import { cn } from '../../../lib/utils';
 
-interface Assessment { id: string; name: string; description: string; status: string; difficulty?: string; duration_in_minutes?: number; no_of_questions?: number; max_score?: number; }
+interface Assessment { id: string; name: string; description: string; status: string; difficulty?: string; duration_in_minutes?: number; no_of_questions?: number; max_score?: number; allow_reattempts?: boolean; }
 interface Section { id: string; name: string; description: string; order_index: number; }
 interface Question { id: string; section_id: string | null; description?: string; name?: string; score?: number; difficulty?: string; created_at?: string; }
+type AssessmentForm = { name: string; description: string; status: string; difficulty: string; duration_in_minutes: number; allow_reattempts?: boolean };
 
 export default function AssessmentDetailsPage() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function AssessmentDetailsPage() {
   const [sections, setSections] = useState<Section[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '', status: 'DRAFT', difficulty: 'MEDIUM', duration_in_minutes: 60 });
+  const [form, setForm] = useState<AssessmentForm>({ name: '', description: '', status: 'DRAFT', difficulty: 'MEDIUM', duration_in_minutes: 60, allow_reattempts: false });
   const [addingToSection, setAddingToSection] = useState<string | null>(null);
   const [availableQuestions, setAvailableQuestions] = useState<Question[]>([]);
   const [selectedToAdd, setSelectedToAdd] = useState<Record<string, boolean>>({});
@@ -50,6 +51,7 @@ export default function AssessmentDetailsPage() {
         status: (a as any).status || 'DRAFT',
         difficulty: (a as any).difficulty || 'MEDIUM',
         duration_in_minutes: (a as any).duration_in_minutes || 60,
+        allow_reattempts: Boolean((a as any).allow_reattempts),
       });
       const { data: s } = await supabase
         .from('sections')
@@ -94,6 +96,7 @@ export default function AssessmentDetailsPage() {
           duration_in_minutes: form.duration_in_minutes,
           no_of_questions: totalQuestions,
           max_score: totalScore,
+          allow_reattempts: Boolean((form as any).allow_reattempts),
         }),
       });
 
@@ -111,6 +114,7 @@ export default function AssessmentDetailsPage() {
           status: payload.assessment.status || 'DRAFT',
           difficulty: payload.assessment.difficulty || 'MEDIUM',
           duration_in_minutes: payload.assessment.duration_in_minutes || 60,
+          allow_reattempts: Boolean(payload.assessment.allow_reattempts),
         });
       }
 
@@ -337,6 +341,17 @@ export default function AssessmentDetailsPage() {
                     disabled={!editing}
                   />
                   <p className="text-xs text-gray-400 mt-1">For 24 hours, set 1440.</p>
+                </div>
+                <div className="flex items-center gap-3 mt-6">
+                  <input
+                    type="checkbox"
+                    id="allowReattempts"
+                    className="h-4 w-4"
+                    checked={Boolean((form as any).allow_reattempts)}
+                    onChange={(e) => setForm({ ...form, allow_reattempts: e.target.checked })}
+                    disabled={!editing}
+                  />
+                  <label htmlFor="allowReattempts" className="text-sm text-gray-300">Allow assessment reattempts</label>
                 </div>
               </div>
               <div className="flex gap-6 text-gray-300">

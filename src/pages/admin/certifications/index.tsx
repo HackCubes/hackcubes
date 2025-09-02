@@ -100,30 +100,108 @@ export default function AdminCertificationsPage() {
   const toggleGrantHJCPT = async (email: string, grant: boolean) => {
     try {
       if (grant) {
+        // Try to get user profile, but don't fail if it doesn't exist
+        const { data: userProfile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', email)
+          .maybeSingle();
+
+        // If profile lookup fails, it's okay - user might not have signed up yet
+        if (profileError && !profileError.message.includes('0 rows')) {
+          console.warn('Profile lookup warning:', profileError.message);
+        }
+
+        // Create or update assessment invitation (this works regardless of profile existence)
         const { data: existing } = await supabase
           .from('assessment_invitations')
           .select('id')
           .eq('assessment_id', HJCPT_ASSESSMENT_ID)
           .eq('email', email)
-          .single();
+          .maybeSingle();
+        
         if (existing) {
-          const { error } = await supabase.from('assessment_invitations').update({ status: 'accepted' }).eq('id', existing.id);
+          const { error } = await supabase
+            .from('assessment_invitations')
+            .update({ 
+              status: 'accepted',
+              accepted_at: new Date().toISOString()
+            })
+            .eq('id', existing.id);
           if (error) throw error;
         } else {
-          const { error } = await supabase.from('assessment_invitations').insert({ assessment_id: HJCPT_ASSESSMENT_ID, email, status: 'accepted' });
+          const { error } = await supabase
+            .from('assessment_invitations')
+            .insert({ 
+              assessment_id: HJCPT_ASSESSMENT_ID, 
+              email, 
+              status: 'accepted',
+              accepted_at: new Date().toISOString()
+            });
           if (error) throw error;
         }
+
+        // Only create enrollment if user profile exists
+        if (userProfile?.id) {
+          const expiryDate = new Date();
+          expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+
+          const { error: enrollmentError } = await supabase
+            .from('enrollments')
+            .upsert({
+              user_id: userProfile.id,
+              assessment_id: HJCPT_ASSESSMENT_ID,
+              status: 'ENROLLED',
+              expires_at: expiryDate.toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { 
+              onConflict: 'user_id,assessment_id' 
+            });
+
+          if (enrollmentError) {
+            console.warn('Warning creating enrollment:', enrollmentError.message);
+          }
+        }
+
         // Fire-and-forget email
         const u = users.find(x => x.email === email);
         sendEnrollmentEmail(email, `${u?.first_name || ''} ${u?.last_name || ''}`.trim() || undefined);
-        toast.success('Access granted');
+        
+        if (userProfile?.id) {
+          toast.success('Access granted and enrollment created');
+        } else {
+          toast.success('Access granted - enrollment will be created when user signs up');
+        }
       } else {
+        // Try to get user profile for revocation
+        const { data: userProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', email)
+          .maybeSingle(); // Use maybeSingle instead of single to avoid error on no rows
+
+        // Delete assessment invitation
         const { error } = await supabase
           .from('assessment_invitations')
           .delete()
           .eq('assessment_id', HJCPT_ASSESSMENT_ID)
           .eq('email', email);
         if (error) throw error;
+
+        // Delete enrollment if user profile exists
+        if (userProfile?.id) {
+          const { error: enrollmentError } = await supabase
+            .from('enrollments')
+            .delete()
+            .eq('user_id', userProfile.id)
+            .eq('assessment_id', HJCPT_ASSESSMENT_ID);
+          
+          if (enrollmentError) {
+            console.warn('Warning deleting enrollment:', enrollmentError.message);
+          }
+        }
+
         const u = users.find(x => x.email === email);
         sendRevokedEmail(email, `${u?.first_name || ''} ${u?.last_name || ''}`.trim() || undefined);
         toast.success('Access revoked');
