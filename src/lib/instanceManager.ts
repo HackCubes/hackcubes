@@ -30,7 +30,7 @@ interface InstanceResponse {
 export class InstanceManager {
   /**
    * Determines whether to use Kubernetes or AWS based on question configuration
-   * UPDATED: Now prefers Kubernetes for ALL challenges with infrastructure needs
+   * UPDATED: Network Security challenges use AWS Lambda, Web Security challenges use Kubernetes
    */
   private static getInstanceType(question: any): 'kubernetes' | 'aws' | 'none' {
     // If question explicitly set to use AWS (legacy support only)
@@ -38,13 +38,28 @@ export class InstanceManager {
       return 'aws';
     }
     
-    // If question has infrastructure requirements, use Kubernetes
-    if (question?.template_id || question?.instance_id || question?.docker_image) {
+    // Network Security challenges should use AWS Lambda (as it was working in d5feaec)
+    if (question?.category === 'Network Security' && (question?.template_id || question?.instance_id)) {
+      return 'aws';
+    }
+    
+    // Web Security challenges with Docker images should use Kubernetes
+    if (question?.category === 'Web Security' && question?.docker_image) {
+      return 'kubernetes';
+    }
+    
+    // If question has infrastructure requirements and is Web Security, use Kubernetes
+    if (question?.category === 'Web Security' && (question?.template_id || question?.instance_id)) {
       return 'kubernetes';
     }
     
     // If question has deployment_type field set to kubernetes
     if (question?.deployment_type === 'kubernetes' || question?.deployment_type === 'k8s') {
+      return 'kubernetes';
+    }
+    
+    // Default fallback: if has infrastructure but no specific category, use Kubernetes
+    if (question?.template_id || question?.instance_id || question?.docker_image) {
       return 'kubernetes';
     }
     
@@ -60,7 +75,10 @@ export class InstanceManager {
     
     const instanceType = this.getInstanceType(question);
     
-    console.log(`🎯 Managing instance for question ${questionId} using ${instanceType} backend`);
+    console.log(`🎯 Managing instance for question ${questionId} (${question?.category || 'Unknown'}) using ${instanceType} backend`);
+    console.log(`   Question name: ${question?.name || 'Unknown'}`);
+    console.log(`   Template ID: ${question?.template_id || 'None'}`);
+    console.log(`   Docker Image: ${question?.docker_image || 'None'}`);
     
     switch (instanceType) {
       case 'kubernetes':
@@ -292,7 +310,7 @@ export class InstanceManager {
   }
 
   /**
-   * Legacy AWS instance management (maintained for backward compatibility)
+   * Network Security challenges AWS instance management (from commit d5feaec)
    */
   private static async manageAWSInstance(options: InstanceManagerOptions): Promise<InstanceResponse> {
     const { action, questionId, candidateId, question, duration } = options;
@@ -304,38 +322,89 @@ export class InstanceManager {
       if (!baseUrl || !token) {
         return {
           status: 'error',
-          error: 'AWS Lambda configuration not available. Please use Kubernetes deployment.'
+          error: 'AWS Lambda configuration not available for Network Security challenges. Please check NETWORK_LAMBDA_URL and AWS_LAMBDA_TOKEN in environment variables.'
         };
       }
 
-      // Build Lambda URL
-      let lambdaUrl = `${baseUrl}?action=${action}&question_id=${questionId}&candidate_id=${candidateId}&token=${token}`;
+      // Build Lambda URL with proper encoding
+      let lambdaUrl = `${baseUrl}?action=${encodeURIComponent(action)}&question_id=${encodeURIComponent(questionId)}&candidate_id=${encodeURIComponent(candidateId)}&token=${encodeURIComponent(token)}`;
       
       if (question?.template_id) {
-        lambdaUrl += `&template_id=${question.template_id}`;
+        lambdaUrl += `&template_id=${encodeURIComponent(question.template_id)}`;
       }
       if (duration) {
-        lambdaUrl += `&duration=${duration}`;
+        lambdaUrl += `&duration=${encodeURIComponent(duration)}`;
       }
+      
+      // Add cache buster
+      lambdaUrl += `&_t=${Date.now()}`;
 
-      const response = await fetch(lambdaUrl, {
-        headers: { 'Cache-Control': 'no-cache' }
-      });
+      console.log(`🔗 Calling Network Lambda: ${action} for ${question?.name || questionId}`);
 
-      if (!response.ok) {
-        return {
-          status: 'error',
-          error: `AWS Lambda error: ${response.statusText}`
-        };
+      // Set appropriate timeout
+      const timeoutMs = action === 'start' ? 15000 : 30000; // 15s for start, 30s for others
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(lambdaUrl, {
+          signal: controller.signal,
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '');
+          console.error(`Lambda returned error status ${response.status}: ${errorText}`);
+          return {
+            status: 'error',
+            error: `Network Lambda error: ${response.statusText}`
+          };
+        }
+
+        const data = await response.json();
+        
+        if (data.error) {
+          return {
+            status: 'error',
+            error: data.error,
+            current_state: data.current_state
+          };
+        }
+
+        // For start action, provide proper feedback
+        if (action === 'start') {
+          return {
+            ...data,
+            ip: data.ip || 'Pending...',
+            message: data.message || 'Network instance initiated successfully'
+          };
+        }
+
+        return data;
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError?.name === 'AbortError') {
+          if (action === 'start') {
+            return {
+              status: 'pending',
+              ip: 'Pending...',
+              message: 'Network instance initiated. Check status later to get IP address.'
+            };
+          }
+          return {
+            status: 'error',
+            error: 'Request timed out. Operation may still be in progress.'
+          };
+        }
+        throw fetchError;
       }
-
-      const data = await response.json();
-      return data;
     } catch (error: any) {
-      console.error('AWS instance management error:', error);
+      console.error('Network Security AWS instance management error:', error);
       return {
         status: 'error',
-        error: error.message || 'Failed to manage AWS instance'
+        error: error.message || 'Failed to manage Network Security instance'
       };
     }
   }
