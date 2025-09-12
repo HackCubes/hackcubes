@@ -18,6 +18,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { getChallengePort, formatChallengeUrl } from '../../../utils/challengeUtils';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 
@@ -1716,10 +1717,20 @@ export default function AssessmentQuestionsPage() {
                         </div>
                       </div>
                       <div className="sm:col-span-2">
-                        <div className="text-gray-400 text-xs">Public IP</div>
+                        <div className="text-gray-400 text-xs">Public URL</div>
                         <div className="text-sm text-white font-mono break-all">
-                          {instanceStates[currentQuestion.id]?.ipAddress || 'N/A'}
+                          {instanceStates[currentQuestion.id]?.ipAddress ? 
+                            formatChallengeUrl(instanceStates[currentQuestion.id].ipAddress!, currentQuestion) : 
+                            'N/A'
+                          }
                         </div>
+                        {instanceStates[currentQuestion.id]?.ipAddress && 
+                         instanceStates[currentQuestion.id].ipAddress !== 'N/A' && 
+                         instanceStates[currentQuestion.id].ipAddress !== 'pending' && (
+                          <div className="text-xs text-gray-400 mt-1">
+                            Port: {getChallengePort(currentQuestion)}
+                          </div>
+                        )}
                       </div>
                     </div>
 

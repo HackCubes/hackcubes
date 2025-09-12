@@ -148,7 +148,7 @@ export class InstanceManager {
 
   /**
    * Create Kubernetes configuration from question data
-   * Maps EC2 template_id to appropriate Docker images
+   * Maps challenge names to specific Docker images and ports from WebChallenges
    */
   private static createKubernetesConfig(question: any): ChallengeConfig {
     let image = 'nginx:latest'; // default
@@ -158,23 +158,59 @@ export class InstanceManager {
     // If question has docker_image, use it directly
     if (question?.docker_image) {
       image = question.docker_image;
+      
+      // Set specific ports based on the challenge docker image
+      if (image.includes('achieverewards')) {
+        ports = [5000];
+      } else if (image.includes('atlas-frontend')) {
+        ports = [5173];
+      } else if (image.includes('atlas-backend')) {
+        ports = [6000];
+      } else if (image.includes('portfolio')) {
+        ports = [5000];
+      } else if (image.includes('integration-frontend')) {
+        ports = [80];
+      } else if (image.includes('integration-backend')) {
+        ports = [6000];
+      } else if (image.includes('integration-localapi')) {
+        ports = [8080];
+      } else if (image.includes('conference')) {
+        ports = [3000];
+      } else if (image.includes('techcorp')) {
+        ports = [8080];
+      }
     }
-    // Map common EC2 template_ids to Docker images
+    // Map challenge names to specific configurations
+    else if (question?.name) {
+      const challengeName = question.name.toLowerCase();
+      
+      if (challengeName.includes('achieverewards')) {
+        image = '082010050918.dkr.ecr.us-east-1.amazonaws.com/achieverewards:latest';
+        ports = [5000];
+      } else if (challengeName.includes('atlas')) {
+        image = '082010050918.dkr.ecr.us-east-1.amazonaws.com/atlas-frontend:latest';
+        ports = [5173];
+      } else if (challengeName.includes('financial') || challengeName.includes('portfolio')) {
+        image = '082010050918.dkr.ecr.us-east-1.amazonaws.com/portfolio:latest';
+        ports = [5000];
+      } else if (challengeName.includes('integration') || challengeName.includes('project')) {
+        image = '082010050918.dkr.ecr.us-east-1.amazonaws.com/integration-frontend:latest';
+        ports = [80];
+      } else if (challengeName.includes('techcon') || challengeName.includes('conference')) {
+        image = '082010050918.dkr.ecr.us-east-1.amazonaws.com/conference:latest';
+        ports = [3000];
+      } else if (challengeName.includes('techcorp')) {
+        image = '082010050918.dkr.ecr.us-east-1.amazonaws.com/techcorp:latest';
+        ports = [8080];
+      }
+    }
+    // Map common EC2 template_ids to Docker images (legacy support)
     else if (question?.template_id) {
       image = this.mapTemplateIdToDockerImage(question.template_id, question.name);
     }
-    // Map instance_id patterns to Docker images
+    // Map instance_id patterns to Docker images (legacy support)
     else if (question?.instance_id) {
       image = this.mapInstanceIdToDockerImage(question.instance_id, question.name);
-    }
-
-    // Determine ports based on challenge type
-    if (question?.name?.toLowerCase().includes('web') || 
-        question?.category?.toLowerCase().includes('web')) {
-      ports = [80, 443];
-    } else if (question?.name?.toLowerCase().includes('ssh') ||
-               question?.category?.toLowerCase().includes('network')) {
-      ports = [22, 80];
     }
 
     // Set environment variables based on question
@@ -183,6 +219,12 @@ export class InstanceManager {
     }
     if (question?.category) {
       environment['CHALLENGE_CATEGORY'] = question.category;
+    }
+
+    // Add specific environment variables for web challenges
+    if (question?.category?.toLowerCase().includes('web')) {
+      environment['FLASK_ENV'] = 'production';
+      environment['NODE_ENV'] = 'production';
     }
 
     return {
