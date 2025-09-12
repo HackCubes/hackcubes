@@ -1,4 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { InstanceManager } from '../../lib/instanceManager';
+import { createClient } from '@supabase/supabase-js';
 
 interface NetworkInstanceResponse {
   status?: string;
@@ -10,9 +12,6 @@ interface NetworkInstanceResponse {
   current_state?: string;
 }
 
-const MAX_START_TIMEOUT = 15000; // 15s for start
-const MAX_DEFAULT_TIMEOUT = 30000; // 30s others
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
@@ -20,7 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { action, question_id, candidate_id, template_id, duration } = req.query as Record<string, string | undefined>;
+    const { action, question_id, candidate_id, template_id, duration, username } = req.query as Record<string, string | undefined>;
 
     if (!action || !question_id || !candidate_id) {
       return res.status(400).json({ error: 'Missing required parameters' });
@@ -31,70 +30,78 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: `Invalid action type. Must be one of: ${validActions.join(', ')}` });
     }
 
-    if (action === 'start' && !template_id) {
-      return res.status(400).json({ error: 'Template ID is required for starting an instance' });
+    // Get question details from database to determine routing
+    let question = null;
+    
+    // Always get question details for proper routing
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (supabaseUrl && supabaseServiceKey) {
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      const { data: questionData } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('id', question_id)
+        .single();
+      
+      question = questionData;
+    }
+    
+    // If no question found but we have template_id, create a minimal question object
+    if (!question && template_id) {
+      question = {
+        id: question_id,
+        template_id: template_id,
+        name: 'Challenge Instance'
+      };
     }
 
-    const baseUrl = process.env.NETWORK_LAMBDA_URL;
-    const token = process.env.AWS_LAMBDA_TOKEN;
+    console.log(`🎯 API Request: ${action} for question ${question_id} with template_id: ${template_id}`);
+    
+    // Use the new InstanceManager
+    const result = await InstanceManager.manageInstance({
+      action: action as any,
+      questionId: question_id,
+      candidateId: candidate_id,
+      username: username || candidate_id.substring(0, 8), // Use part of candidate_id as username if not provided
+      question: question,
+      duration: duration
+    });
 
-    if (!baseUrl || !token) {
-      console.error('Network Lambda URL or token not configured');
-      return res.status(500).json({ error: 'Server configuration error' });
+    console.log(`📊 InstanceManager result:`, result);
+
+    // Transform the response to match the expected NetworkInstanceResponse format
+    const response: NetworkInstanceResponse = {
+      status: result.status,
+      ip: result.ip,
+      instance_id: result.instance_id,
+      expiration_time: result.expiration_time || result.expirationTime,
+      message: result.message,
+      error: result.error,
+      current_state: result.current_state
+    };
+
+    // Handle different response types
+    if (result.error && result.status === 'error') {
+      return res.status(400).json(response);
     }
 
-    let lambdaUrl = `${baseUrl}?action=${encodeURIComponent(action)}&question_id=${encodeURIComponent(question_id)}&candidate_id=${encodeURIComponent(candidate_id)}&token=${encodeURIComponent(token)}`;
-
-    if (template_id) {
-      lambdaUrl += `&template_id=${encodeURIComponent(template_id)}`;
-    }
-    if (duration) {
-      lambdaUrl += `&duration=${encodeURIComponent(duration)}`;
-    }
-
-    lambdaUrl += `&_t=${Date.now()}`; // cache buster
-
-    const timeoutMs = action === 'start' ? MAX_START_TIMEOUT : MAX_DEFAULT_TIMEOUT;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-      const response = await fetch(lambdaUrl, {
-        signal: controller.signal,
-        headers: { 'Cache-Control': 'no-cache' },
+    if (result.status === 'not_supported') {
+      return res.status(400).json({ 
+        error: 'This challenge does not support instance management',
+        status: 'not_supported'
       });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        console.error(`Lambda returned error status ${response.status}: ${errorText}`);
-        return res.status(response.status).json({ error: `Failed to process request: ${response.statusText}` });
-      }
-
-      const data: NetworkInstanceResponse = await response.json();
-
-      if (data.error) {
-        return res.status(400).json({ error: data.error, current_state: data.current_state });
-      }
-
-      if (action === 'start') {
-        return res.status(200).json({ ...data, ip: data.ip || 'Pending...', message: 'Instance initiated successfully' });
-      }
-
-      return res.status(200).json(data);
-    } catch (e: any) {
-      clearTimeout(timeoutId);
-      if (e?.name === 'AbortError') {
-        if (action === 'start') {
-          return res.status(202).json({ status: 'pending', ip: 'Pending...', message: 'Instance initiated. Check status later to get IP address.' });
-        }
-        return res.status(504).json({ error: 'Request timed out. Operation may still be in progress.' });
-      }
-      throw e;
     }
+
+    // Success response
+    return res.status(200).json(response);
+
   } catch (err: any) {
-    console.error('Error calling network instance Lambda:', err);
-    return res.status(500).json({ error: 'Failed to process request', message: err?.message });
+    console.error('Error in network-instance API:', err);
+    return res.status(500).json({ 
+      error: 'Failed to process request', 
+      message: err?.message 
+    });
   }
 }

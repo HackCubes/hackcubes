@@ -32,7 +32,9 @@ interface FormData {
   hints: string[];
   source_code: string;
   instance_type: string;
+  deployment_type: string;
   docker_image: string;
+  template_id: string;
   flags: Array<{
     value: string;
     score: number;
@@ -52,7 +54,9 @@ export default function NewChallenge() {
     hints: [],
     source_code: '',
     instance_type: 'docker',
+    deployment_type: 'kubernetes',
     docker_image: '',
+    template_id: '',
     flags: [{ value: '', score: 100, is_case_sensitive: true, hint: '' }]
   });
   const [currentTag, setCurrentTag] = useState('');
@@ -224,7 +228,9 @@ export default function NewChallenge() {
           hints: formData.hints,
           source_code: formData.source_code,
           instance_type: formData.instance_type,
+          deployment_type: formData.deployment_type,
           docker_image: formData.docker_image,
+          template_id: formData.template_id || null,
           order_index: nextOrder
         })
         .select()
@@ -689,34 +695,110 @@ export default function NewChallenge() {
               <h3 className="text-lg font-bold text-white mb-4">Infrastructure</h3>
               
               <div className="space-y-4">
+                {/* Deployment Type Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Instance Type
+                    Deployment Type
                   </label>
                   <select
-                    value={formData.instance_type}
-                    onChange={(e) => handleInputChange('instance_type', e.target.value)}
+                    value={formData.deployment_type}
+                    onChange={(e) => handleInputChange('deployment_type', e.target.value)}
                     className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
                   >
-                    <option value="none">No Instance</option>
-                    <option value="docker">Docker Container</option>
-                    <option value="vm">Virtual Machine</option>
+                    <option value="none">No Infrastructure Required</option>
+                    <option value="kubernetes">Kubernetes Cluster</option>
+                    <option value="aws">AWS Lambda (Legacy)</option>
                   </select>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {formData.deployment_type === 'kubernetes' && 'Deploy containers using Kubernetes with deployment files from GitHub'}
+                    {formData.deployment_type === 'aws' && 'Launch VMs using AWS Lambda templates (existing system)'}
+                    {formData.deployment_type === 'none' && 'This challenge runs in the browser without additional infrastructure'}
+                  </p>
                 </div>
-                
-                {formData.instance_type === 'docker' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Docker Image
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.docker_image}
-                      onChange={(e) => handleInputChange('docker_image', e.target.value)}
-                      placeholder="ubuntu:latest"
-                      className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
-                    />
-                  </div>
+
+                {/* Kubernetes Configuration */}
+                {formData.deployment_type === 'kubernetes' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Instance Type
+                      </label>
+                      <select
+                        value={formData.instance_type}
+                        onChange={(e) => handleInputChange('instance_type', e.target.value)}
+                        className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
+                      >
+                        <option value="docker">Docker Container</option>
+                        <option value="vm">Virtual Machine</option>
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Docker Image
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.docker_image}
+                        onChange={(e) => handleInputChange('docker_image', e.target.value)}
+                        placeholder="hackcubes/web-challenge:latest"
+                        className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        Container image that will be deployed. Deployment files will be fetched from GitHub.
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                {/* AWS Configuration */}
+                {formData.deployment_type === 'aws' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Instance Type
+                      </label>
+                      <select
+                        value={formData.instance_type}
+                        onChange={(e) => handleInputChange('instance_type', e.target.value)}
+                        className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white focus:outline-none focus:border-red-500"
+                      >
+                        <option value="vm">Virtual Machine</option>
+                        <option value="docker">Docker Container</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        AWS Template ID
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.template_id}
+                        onChange={(e) => handleInputChange('template_id', e.target.value)}
+                        placeholder="lt-0cb8327cecfab4c8f"
+                        className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        AWS Launch Template ID for VM provisioning via Lambda.
+                      </p>
+                    </div>
+                    
+                    {formData.instance_type === 'docker' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Docker Image (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.docker_image}
+                          onChange={(e) => handleInputChange('docker_image', e.target.value)}
+                          placeholder="ubuntu:latest"
+                          className="w-full px-4 py-2 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
