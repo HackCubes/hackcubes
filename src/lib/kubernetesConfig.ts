@@ -21,43 +21,47 @@ export class EKSKubernetesManager {
   }
 
   private initializeKubeConfig() {
-    if (process.env.NODE_ENV === 'production') {
-      // In production, load from cluster or use service account
+    // Always use EKS configuration if available, regardless of environment
+    const clusterName = process.env.EKS_CLUSTER_NAME;
+    const clusterEndpoint = process.env.EKS_CLUSTER_ENDPOINT;
+    const region = process.env.EKS_CLUSTER_REGION || process.env.AWS_REGION || 'us-east-1';
+
+    if (clusterName && clusterEndpoint) {
+      // Configure for EKS (works for both dev and production)
+      console.log(`🎯 Configuring EKS authentication for cluster: ${clusterName}`);
+      this.configureEKS(clusterName, clusterEndpoint, region);
+    } else if (process.env.NODE_ENV === 'production') {
+      // Only fallback to loadFromCluster if EKS config is not available
+      console.log('🔄 Falling back to in-cluster authentication');
       this.kc.loadFromCluster();
     } else {
-      // For development, we'll configure EKS manually
-      const clusterName = process.env.EKS_CLUSTER_NAME;
-      const clusterEndpoint = process.env.EKS_CLUSTER_ENDPOINT;
-      const region = process.env.EKS_CLUSTER_REGION || process.env.AWS_REGION || 'us-east-1';
-
-      if (clusterName && clusterEndpoint) {
-        // Configure for EKS
-        this.configureEKS(clusterName, clusterEndpoint, region);
-      } else {
-        // Fallback to default kubeconfig
-        try {
-          this.kc.loadFromDefault();
-        } catch (error) {
-          console.warn('Could not load default kubeconfig, using EKS configuration');
-          if (clusterName && clusterEndpoint) {
-            this.configureEKS(clusterName, clusterEndpoint, region);
-          }
-        }
+      // For development without EKS config, try default kubeconfig
+      try {
+        this.kc.loadFromDefault();
+      } catch (error) {
+        console.warn('Could not load default kubeconfig:', error);
+        throw new Error('No valid Kubernetes configuration found. Please set EKS_CLUSTER_NAME and EKS_CLUSTER_ENDPOINT environment variables.');
       }
     }
   }
 
   private configureEKS(clusterName: string, endpoint: string, region: string) {
-    // EKS-specific configuration with SSL handling for development
+    // EKS-specific configuration with SSL handling
+    // Allow skipping TLS verification in production if EKS_SKIP_TLS_VERIFY is set
+    const shouldSkipTLSVerify = process.env.NODE_ENV !== 'production' || 
+                               process.env.EKS_SKIP_TLS_VERIFY === 'true';
+    
     const cluster = {
       name: clusterName,
       server: endpoint,
-      // For development, we'll skip TLS verification to avoid certificate issues
-      skipTLSVerify: process.env.NODE_ENV !== 'production',
-      ...(process.env.NODE_ENV === 'production' && {
-        caData: process.env.EKS_CA_DATA // In production, use proper CA data
+      skipTLSVerify: shouldSkipTLSVerify,
+      // Use CA data in production if available
+      ...(process.env.NODE_ENV === 'production' && process.env.EKS_CA_DATA && {
+        caData: process.env.EKS_CA_DATA
       })
     };
+
+    console.log(`🔐 EKS SSL Configuration: skipTLSVerify=${shouldSkipTLSVerify}, caData=${process.env.EKS_CA_DATA ? 'provided' : 'not provided'}`);
 
     const user = {
       name: `${clusterName}-user`,
@@ -96,9 +100,10 @@ export class EKSKubernetesManager {
       currentContext: `${clusterName}-context`
     });
 
-    // For development, disable strict SSL
-    if (process.env.NODE_ENV !== 'production') {
+    // Disable strict SSL if in development or if explicitly configured for production
+    if (process.env.NODE_ENV !== 'production' || process.env.EKS_SKIP_TLS_VERIFY === 'true') {
       process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+      console.log('🔓 TLS verification disabled for EKS cluster connection');
     }
   }
 

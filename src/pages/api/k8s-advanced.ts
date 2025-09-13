@@ -30,7 +30,77 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Initialize Kubernetes client with advanced features
     const kc = new k8s.KubeConfig();
-    if (process.env.NODE_ENV === 'production') {
+    
+    // Always use EKS configuration if available, regardless of environment
+    const clusterName = process.env.EKS_CLUSTER_NAME;
+    const clusterEndpoint = process.env.EKS_CLUSTER_ENDPOINT;
+    const region = process.env.EKS_CLUSTER_REGION || process.env.AWS_REGION || 'us-east-1';
+
+    if (clusterName && clusterEndpoint) {
+      // Configure for EKS (works for both dev and production)
+      console.log(`🎯 K8s-Advanced: Configuring EKS authentication for cluster: ${clusterName}`);
+      
+      // Allow skipping TLS verification in production if EKS_SKIP_TLS_VERIFY is set
+      const shouldSkipTLSVerify = process.env.NODE_ENV !== 'production' || 
+                                 process.env.EKS_SKIP_TLS_VERIFY === 'true';
+      
+      const cluster = {
+        name: clusterName,
+        server: clusterEndpoint,
+        skipTLSVerify: shouldSkipTLSVerify,
+        // Use CA data in production if available
+        ...(process.env.NODE_ENV === 'production' && process.env.EKS_CA_DATA && {
+          caData: process.env.EKS_CA_DATA
+        })
+      };
+
+      console.log(`🔐 K8s-Advanced SSL Configuration: skipTLSVerify=${shouldSkipTLSVerify}`);
+
+      const user = {
+        name: `${clusterName}-user`,
+        exec: {
+          apiVersion: 'client.authentication.k8s.io/v1beta1',
+          command: 'aws',
+          args: [
+            'eks',
+            'get-token',
+            '--cluster-name',
+            clusterName,
+            '--region',
+            region,
+            '--output',
+            'json'
+          ],
+          env: [
+            {
+              name: 'AWS_REGION',
+              value: region
+            }
+          ]
+        }
+      };
+
+      const context = {
+        name: `${clusterName}-context`,
+        cluster: clusterName,
+        user: `${clusterName}-user`
+      };
+
+      kc.loadFromOptions({
+        clusters: [cluster],
+        users: [user],
+        contexts: [context],
+        currentContext: `${clusterName}-context`
+      });
+
+             // Disable strict SSL if in development or if explicitly configured for production
+       if (process.env.NODE_ENV !== 'production' || process.env.EKS_SKIP_TLS_VERIFY === 'true') {
+         process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+         console.log('🔓 K8s-Advanced: TLS verification disabled for EKS cluster connection');
+       }
+    } else if (process.env.NODE_ENV === 'production') {
+      // Only fallback to loadFromCluster if EKS config is not available
+      console.log('🔄 K8s-Advanced: Falling back to in-cluster authentication');
       kc.loadFromCluster();
     } else {
       kc.loadFromDefault();
