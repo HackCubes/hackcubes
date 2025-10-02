@@ -416,7 +416,8 @@ export default function AssessmentQuestionsPage() {
             ipAddress: null,
             isLoading: false,
             status: 'ready', // Start with 'ready' instead of 'not_found'
-            instanceId: undefined,
+            // For pre-provisioned (web) challenges, seed instanceId from DB
+            instanceId: question.template_id ? undefined : (question.instance_id || undefined),
             expirationTime: undefined
           };
         }
@@ -437,7 +438,18 @@ export default function AssessmentQuestionsPage() {
   // Auto-fetch machine status when switching questions (if instance-backed)
   useEffect(() => {
     const q = questions[currentQuestionIndex];
-    if (q && (q.template_id || q.instance_id)) {
+    if (!q) return;
+    if (q.template_id || q.instance_id) {
+      // Ensure instanceId is set for pre-provisioned challenges
+      if (q.instance_id) {
+        setInstanceStates(prev => ({
+          ...prev,
+          [q.id]: {
+            ...prev[q.id],
+            instanceId: prev[q.id]?.instanceId || q.instance_id
+          }
+        }));
+      }
       fetchMachineInfo(q.id, { isRefresh: false, keepModalClosed: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1094,12 +1106,13 @@ export default function AssessmentQuestionsPage() {
         }
       }
 
-      // Terminate all running instances
+      // Terminate all running network instances (template-based only)
       try {
-        const ids = Object.keys(instanceStates);
-        await Promise.all(ids.map(id => 
-          fetch(`/api/network-instance?action=terminate&question_id=${id}&candidate_id=${user?.id}&_t=${Date.now()}`)
-        ));
+        const ids = Object.keys(instanceStates).filter(id => {
+          const q = questions.find(q => q.id === id);
+          return q && Boolean(q.template_id); // only template-based/network
+        });
+        await Promise.all(ids.map(id => fetch(`/api/network-instance?action=terminate&question_id=${id}&candidate_id=${user?.id}&_t=${Date.now()}`)));
       } catch (error) {
         console.error('Error terminating instances:', error);
         // Don't throw here, just log the error
@@ -1181,41 +1194,7 @@ export default function AssessmentQuestionsPage() {
 
   const getQuestionById = useCallback((qid: string) => questions.find(q => q.id === qid), [questions]);
 
-  const refreshMachineStatus = useCallback(async (questionId: string) => {
-    // Clear cache and fetch latest
-    delete machineInfoCache.current[questionId];
-    
-    // Clear any previous errors
-    setMachineDetailsError(null);
-    
-    // Update status to show we're refreshing
-    setInstanceStates(prev => ({ 
-      ...prev, 
-      [questionId]: { 
-        ...prev[questionId], 
-        isLoading: true 
-      } 
-    }));
-    
-    try {
-      await fetchMachineInfo(questionId, { isRefresh: true, keepModalClosed: false });
-    } catch (error) {
-      // If refresh fails, show a user-friendly message
-      setMachineDetailsError('Unable to refresh status. Instance may not be started yet.');
-      
-      // Reset to a neutral state
-      setInstanceStates(prev => ({ 
-        ...prev, 
-        [questionId]: { 
-          ...prev[questionId], 
-          isLoading: false,
-          status: 'ready',
-          isRunning: false,
-          ipAddress: null
-        } 
-      }));
-    }
-  }, []);
+  // refreshMachineStatus defined after fetchMachineInfo
 
   const fetchMachineInfo = useCallback(async (questionId: string, options: { isRefresh?: boolean; keepModalClosed?: boolean } = {}) => {
     const question = getQuestionById(questionId);
@@ -1237,8 +1216,9 @@ export default function AssessmentQuestionsPage() {
     }
 
     try {
-      // Network Security uses network-instance endpoint
-      if (question.template_id || question.instance_id) {
+      const isNetwork = Boolean(question.template_id) || question.category === 'Network Security';
+      if (isNetwork) {
+        // Network challenges: use network-instance endpoint (question_id + candidate_id)
         const resp = await fetch(`/api/network-instance?action=get_status&question_id=${questionId}&candidate_id=${user?.id}&_t=${Date.now()}`, { headers: { 'Cache-Control': 'no-cache' } });
         if (!resp.ok) {
           if (resp.status === 404) {
@@ -1264,6 +1244,31 @@ export default function AssessmentQuestionsPage() {
             machineInfoCache.current[questionId] = { data, timestamp: currentTime };
           } else {
             if (runningNetworkInstanceRef.current === questionId) runningNetworkInstanceRef.current = null;
+            delete machineInfoCache.current[questionId];
+          }
+        }
+      } else if (question.instance_id) {
+        // Web challenges (pre-provisioned): use machine-info with existing instance_id from DB
+        const resp = await fetch(`/api/machine-info?instanceId=${encodeURIComponent(question.instance_id)}&_t=${Date.now()}`, { headers: { 'Cache-Control': 'no-cache' } });
+        if (!resp.ok) {
+          if (resp.status === 404) {
+            const notFoundStatus = options.isRefresh ? 'stopped' : 'ready';
+            if (!options.keepModalClosed && options.isRefresh) {
+              setShowMachineDetails({ questionId, status: notFoundStatus, ip: '' });
+            }
+            setInstanceStates(prev => ({ ...prev, [questionId]: { isRunning: false, ipAddress: null, isLoading: false, status: notFoundStatus, instanceId: prev[questionId]?.instanceId || question.instance_id } }));
+            delete machineInfoCache.current[questionId];
+          } else {
+            throw new Error('Failed to fetch machine status');
+          }
+        } else {
+          const data = await resp.json();
+          const isActive = ['running', 'pending', 'starting'].includes(data.status);
+          if (!options.keepModalClosed) setShowMachineDetails({ questionId, status: data.status, ip: data.ip || '' });
+          setInstanceStates(prev => ({ ...prev, [questionId]: { isRunning: isActive, ipAddress: data.ip || 'Pending...', isLoading: false, instanceId: prev[questionId]?.instanceId || question.instance_id, status: data.status, expirationTime: prev[questionId]?.expirationTime } }));
+          if (data.status === 'running') {
+            machineInfoCache.current[questionId] = { data, timestamp: currentTime };
+          } else {
             delete machineInfoCache.current[questionId];
           }
         }
@@ -1296,14 +1301,44 @@ export default function AssessmentQuestionsPage() {
     } finally {
       setMachineDetailsLoading(false);
     }
-  }, [getQuestionById, user?.id]);
+  }, [getQuestionById, user?.id, CACHE_TTL]);
+
+  const refreshMachineStatus = useCallback(async (questionId: string) => {
+    // Clear cache and fetch latest
+    delete machineInfoCache.current[questionId];
+    // Clear any previous errors
+    setMachineDetailsError(null);
+    // Update status to show we're refreshing
+    setInstanceStates(prev => ({
+      ...prev,
+      [questionId]: {
+        ...prev[questionId],
+        isLoading: true
+      }
+    }));
+    try {
+      await fetchMachineInfo(questionId, { isRefresh: true, keepModalClosed: false });
+    } catch (error) {
+      setMachineDetailsError('Unable to refresh status. Instance may not be started yet.');
+      setInstanceStates(prev => ({
+        ...prev,
+        [questionId]: {
+          ...prev[questionId],
+          isLoading: false,
+          status: 'ready',
+          isRunning: false,
+          ipAddress: null
+        }
+      }));
+    }
+  }, [fetchMachineInfo]);
 
   const startInstance = useCallback(async (questionId: string) => {
     const question = getQuestionById(questionId);
     if (!question) return;
 
-    // Prevent multiple network instances
-    if ((question.template_id || question.instance_id) && runningNetworkInstanceRef.current && runningNetworkInstanceRef.current !== questionId) {
+  // Prevent multiple network instances (only for template-based)
+  if (question.template_id && runningNetworkInstanceRef.current && runningNetworkInstanceRef.current !== questionId) {
       setMachineDetailsError('Another instance is running. Stop it before starting a new one.');
       return;
     }
@@ -1337,7 +1372,7 @@ export default function AssessmentQuestionsPage() {
 
       const resp = await fetch(url, { headers: { 'Cache-Control': 'no-cache' } });
       if (!resp.ok && resp.status !== 202) throw new Error(`Failed to start instance: ${resp.statusText}`);
-      if (question.template_id || question.instance_id) runningNetworkInstanceRef.current = questionId;
+  if (question.template_id) runningNetworkInstanceRef.current = questionId;
       await fetchMachineInfo(questionId, { isRefresh: true });
       
       // Poll more aggressively for a short period after starting
@@ -1699,12 +1734,16 @@ export default function AssessmentQuestionsPage() {
                   </div>
                 )}
 
-                {/* Instance Controls (AWS-backed) */}
+                {/* Instance Controls */}
                 {(currentQuestion.template_id || currentQuestion.instance_id) && (
                   <div className="mb-6 rounded-lg border border-gray-border bg-dark-bg p-4">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-white font-semibold">Challenge Instance</h4>
-                      <span className="text-xs text-gray-400">Only one instance can run at a time</span>
+                      {currentQuestion.template_id ? (
+                        <span className="text-xs text-gray-400">Only one instance can run at a time</span>
+                      ) : (
+                        <span className="text-xs text-gray-400">Managed by platform</span>
+                      )}
                     </div>
 
                     {/* Status and IP */}
@@ -1723,40 +1762,56 @@ export default function AssessmentQuestionsPage() {
                       </div>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => startInstance(currentQuestion.id)}
-                        className="px-3 py-2 text-sm rounded bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-                        disabled={['running', 'starting', 'restarting'].includes(instanceStates[currentQuestion.id]?.status || '') || machineDetailsLoading}
-                      >
-                        {instanceStates[currentQuestion.id]?.status === 'starting' ? 'Starting...' : 'Start'}
-                      </button>
-                      <button
-                        onClick={() => stopInstance(currentQuestion.id)}
-                        className="px-3 py-2 text-sm rounded bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
-                        disabled={!['running', 'pending'].includes(instanceStates[currentQuestion.id]?.status || '') || machineDetailsLoading}
-                      >
-                        {instanceStates[currentQuestion.id]?.status === 'stopping' ? 'Stopping...' : 'Stop'}
-                      </button>
-                      <button
-                        onClick={() => restartInstance(currentQuestion.id)}
-                        className="px-3 py-2 text-sm rounded bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50"
-                        disabled={!['running', 'pending'].includes(instanceStates[currentQuestion.id]?.status || '') || machineDetailsLoading}
-                      >
-                        {instanceStates[currentQuestion.id]?.status === 'restarting' ? 'Restarting...' : 'Restart'}
-                      </button>
-                      <button
-                        onClick={() => fetchMachineInfo(currentQuestion.id, { isRefresh: true })}
-                        className="px-3 py-2 text-sm rounded bg-gray-700 hover:bg-gray-600 text-white disabled:opacity-50"
-                        disabled={machineDetailsLoading}
-                      >
-                        {machineDetailsLoading ? 'Refreshing...' : 'Refresh Status'}
-                      </button>
-                      {machineDetailsError && (
-                        <div className="text-xs text-red-400 mt-2 w-full">{machineDetailsError}</div>
-                      )}
-                    </div>
+                    {/* Action Buttons: only for network/template-based challenges */}
+                    {currentQuestion.template_id ? (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => startInstance(currentQuestion.id)}
+                          className="px-3 py-2 text-sm rounded bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+                          disabled={['running', 'starting', 'restarting'].includes(instanceStates[currentQuestion.id]?.status || '') || machineDetailsLoading}
+                        >
+                          {instanceStates[currentQuestion.id]?.status === 'starting' ? 'Starting...' : 'Start'}
+                        </button>
+                        <button
+                          onClick={() => stopInstance(currentQuestion.id)}
+                          className="px-3 py-2 text-sm rounded bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                          disabled={!['running', 'pending'].includes(instanceStates[currentQuestion.id]?.status || '') || machineDetailsLoading}
+                        >
+                          {instanceStates[currentQuestion.id]?.status === 'stopping' ? 'Stopping...' : 'Stop'}
+                        </button>
+                        <button
+                          onClick={() => restartInstance(currentQuestion.id)}
+                          className="px-3 py-2 text-sm rounded bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50"
+                          disabled={!['running', 'pending'].includes(instanceStates[currentQuestion.id]?.status || '') || machineDetailsLoading}
+                        >
+                          {instanceStates[currentQuestion.id]?.status === 'restarting' ? 'Restarting...' : 'Restart'}
+                        </button>
+                        <button
+                          onClick={() => fetchMachineInfo(currentQuestion.id, { isRefresh: true })}
+                          className="px-3 py-2 text-sm rounded bg-gray-700 hover:bg-gray-600 text-white disabled:opacity-50"
+                          disabled={machineDetailsLoading}
+                        >
+                          {machineDetailsLoading ? 'Refreshing...' : 'Refresh Status'}
+                        </button>
+                        {machineDetailsError && (
+                          <div className="text-xs text-red-400 mt-2 w-full">{machineDetailsError}</div>
+                        )}
+                      </div>
+                    ) : (
+                      // Web challenges: read-only; show refresh only
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => fetchMachineInfo(currentQuestion.id, { isRefresh: true })}
+                          className="px-3 py-2 text-sm rounded bg-gray-700 hover:bg-gray-600 text-white disabled:opacity-50"
+                          disabled={machineDetailsLoading}
+                        >
+                          {machineDetailsLoading ? 'Refreshing...' : 'Refresh Status'}
+                        </button>
+                        {machineDetailsError && (
+                          <div className="text-xs text-red-400 mt-2 w-full">{machineDetailsError}</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
