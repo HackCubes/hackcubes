@@ -32,7 +32,7 @@ export const Footer: React.FC = () => {
     { label: 'Challenge', href: '/challenge' },
     { label: 'About', href: '#about' },
     { label: 'Support', href: 'mailto:support@hackcubes.com' },
-    { label: 'Contact', href: '#contact' },
+    { label: 'Contact Us', href: '/contact-us' }, // Updated link to new Contact Us page
   ];
 
   const resources = [
@@ -44,9 +44,9 @@ export const Footer: React.FC = () => {
   ];
 
   const legal = [
-    { label: 'Privacy Policy', href: '#' },
-    { label: 'Terms of Service', href: '#' },
-    { label: 'Cookie Policy', href: '#' },
+    { label: 'Privacy Policy', href: '/privacy-policy' },
+    { label: 'Terms & Conditions', href: '/terms' },
+    { label: 'Refund & Cancellation', href: '/refund-cancellation' },
     // { label: 'GDPR', href: '#' }, // Commented out per request
   ];
 
