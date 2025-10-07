@@ -192,7 +192,7 @@ export const Footer: React.FC = () => {
         <div className="border-t border-gray-border pt-8 mt-8">
           <div className="flex flex-col md:flex-row justify-between items-center text-sm text-gray-400">
             <p>
-              © 2025 HackCubes. All rights reserved. Made with ❤️ for the cybersecurity community.
+              © 2025 HackCubes(HACKRUIT SECURITY HIRING PRIVATE LIMITED). All rights reserved. Made with ❤️ for the cybersecurity community.
             </p>
             <p className="mt-2 md:mt-0">
               Empowering the next generation of ethical hackers
