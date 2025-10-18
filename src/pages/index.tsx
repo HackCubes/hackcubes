@@ -117,12 +117,15 @@ export default function LandingPage() {
                   >
                     Dashboard
                   </Link>
+                  {/* Admin link hidden on homepage */}
+                  {/**
                   <Link
                     href="/admin"
                     className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium"
                   >
                     Admin
                   </Link>
+                  **/}
                   <a
                     href="mailto:support@hackcubes.com?subject=Support Request - HackCubes Platform"
                     className="text-gray-300 hover:text-neon-green px-3 py-2 rounded-md text-sm font-medium transition-colors duration-300"
@@ -138,6 +141,8 @@ export default function LandingPage() {
                 </>
               ) : (
                 <>
+                  {/* Admin sign-in link hidden on homepage */}
+                  {/**
                   <Link
                     href="/auth/admin-signin"
                     className="flex items-center text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium"
@@ -145,6 +150,7 @@ export default function LandingPage() {
                     <Shield className="h-4 w-4 mr-1" />
                     Admin
                   </Link>
+                  **/}
                   <Link
                     href="/auth/signin"
                     className="flex items-center text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium"
@@ -207,12 +213,15 @@ export default function LandingPage() {
                       >
                         Dashboard
                       </Link>
+                      {/* Admin link hidden on homepage (mobile) */}
+                      {/**
                       <Link
                         href="/admin"
                         className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium"
                       >
                         Admin
                       </Link>
+                      **/}
                       <a
                         href="mailto:support@hackcubes.com?subject=Support Request - HackCubes Platform"
                         className="text-gray-300 hover:text-neon-green block px-3 py-2 rounded-md text-base font-medium transition-colors duration-300"
