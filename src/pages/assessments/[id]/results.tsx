@@ -56,9 +56,18 @@ interface Question {
   difficulty: string;
 }
 
+interface Flag {
+  id: string;
+  question_id: string;
+  value: string;
+  is_case_sensitive: boolean;
+  score: number;
+}
+
 interface Submission {
   id: string;
   question_id: string;
+  flag_id?: string;
   submitted_answer: string;
   is_correct: boolean;
   points_awarded: number;
@@ -74,10 +83,12 @@ export default function AssessmentResultsPage() {
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [flags, setFlags] = useState<Flag[]>([]);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showDetailedResults, setShowDetailedResults] = useState(false);
   const [submissionCompleted, setSubmissionCompleted] = useState(false);
+  const [submissionTiming, setSubmissionTiming] = useState<{ started_at?: string | null; completed_at?: string | null } | null>(null);
   const [resettingAssessment, setResettingAssessment] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportStatus, setReportStatus] = useState<any>(null);
@@ -125,7 +136,7 @@ export default function AssessmentResultsPage() {
           // If enrollment isn't completed (or missing), check if a submission is completed
           const { data: submissionRow } = await supabase
             .from('submissions')
-            .select('status, completed_at')
+            .select('status, started_at, completed_at')
             .eq('assessment_id', assessmentId)
             .eq('candidate_id', user.id)
             .single();
@@ -134,6 +145,7 @@ export default function AssessmentResultsPage() {
             // Allow results to render; we will derive scores from user_flag_submissions
             setSubmissionCompleted(true);
             setIsEnrolledInCourse(true); // User has completed assessment, so they're enrolled
+            setSubmissionTiming({ started_at: submissionRow.started_at, completed_at: submissionRow.completed_at });
             
             // Calculate report deadline from submission completion
             if (submissionRow.completed_at) {
@@ -150,6 +162,19 @@ export default function AssessmentResultsPage() {
             return;
           }
         }
+
+        // Ensure we have submission timing even when enrollment exists
+        try {
+          const { data: subTime } = await supabase
+            .from('submissions')
+            .select('started_at, completed_at, status')
+            .eq('assessment_id', assessmentId)
+            .eq('candidate_id', user.id)
+            .order('started_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (subTime) setSubmissionTiming({ started_at: subTime.started_at, completed_at: subTime.completed_at });
+        } catch {}
 
         // Fetch assessment
         const { data: assessmentData } = await supabase
@@ -171,6 +196,13 @@ export default function AssessmentResultsPage() {
           .in('section_id', (sectionsData || []).map(s => s.id))
           .order('order_index');
         setQuestions(questionsData || []);
+
+        // Fetch flags for these questions
+        const { data: flagsData } = await supabase
+          .from('flags')
+          .select('*')
+          .in('question_id', (questionsData || []).map(q => q.id));
+        setFlags(flagsData || []);
 
         // Fetch submissions (user's flag submissions)
         let fetchedSubmissions: any[] = [];
@@ -281,7 +313,7 @@ export default function AssessmentResultsPage() {
     };
 
     fetchData();
-  }, [assessmentId, router.isReady, supabase]);
+  }, [assessmentId, router.isReady, router, supabase]);
 
   // Update time remaining for report every minute
   useEffect(() => {
@@ -310,10 +342,18 @@ export default function AssessmentResultsPage() {
   };
 
   const getDetailedStats = () => {
+    // Treat each flag as an item. Questions may have multiple flags.
     const correctAnswers = submissions.filter(s => s.is_correct).length;
     const incorrectAnswers = submissions.filter(s => !s.is_correct && s.submitted_answer).length;
-    const unanswered = Math.max(0, questions.length - submissions.length);
-    return { correctAnswers, incorrectAnswers, unanswered };
+    const totalFlags = flags.length > 0
+      ? flags.length
+      : (() => {
+          const perQuestionFlags = questions.reduce((sum, q) => sum + (q as any).no_of_flags || 0, 0);
+          return perQuestionFlags > 0 ? perQuestionFlags : questions.length;
+        })();
+    const answered = correctAnswers + incorrectAnswers;
+    const unanswered = Math.max(0, totalFlags - answered);
+    return { correctAnswers, incorrectAnswers, unanswered, totalFlags };
   };
 
   const handleStartOver = async () => {
@@ -546,17 +586,22 @@ export default function AssessmentResultsPage() {
     );
   }
 
-  const { correctAnswers, incorrectAnswers, unanswered } = getDetailedStats();
+  const { correctAnswers, incorrectAnswers, unanswered, totalFlags } = getDetailedStats();
   const displayedFinalScore = enrollment?.final_score ?? totalPointsAwarded;
   const performanceLevel = getPerformanceLevel(displayedFinalScore);
   const percentage = assessment.max_score > 0 ? (displayedFinalScore / assessment.max_score) * 100 : 0;
   const hasPassed = percentage >= 60;
-  const displayedProgress = enrollment?.progress_percentage ?? (questions.length > 0 ? (correctAnswers / questions.length) * 100 : 0);
-  const timeTaken = enrollment?.time_taken_minutes ?? (
-    enrollment?.started_at && enrollment?.completed_at
-      ? Math.round((new Date(enrollment.completed_at).getTime() - new Date(enrollment.started_at).getTime()) / 60000)
-      : 0
-  );
+  const displayedProgress = enrollment?.progress_percentage ?? (totalFlags > 0 ? (correctAnswers / totalFlags) * 100 : 0);
+  const timeTaken = (() => {
+    if (enrollment?.time_taken_minutes && enrollment.time_taken_minutes > 0) return enrollment.time_taken_minutes;
+    const start = enrollment?.started_at || submissionTiming?.started_at;
+    const end = enrollment?.completed_at || submissionTiming?.completed_at;
+    if (start && end) {
+      const ms = new Date(end).getTime() - new Date(start).getTime();
+      return Math.max(0, Math.round(ms / 60000));
+    }
+    return 0;
+  })();
 
   // Determine final result label and color based on report review status
   const resultStatus = (() => {
@@ -669,13 +714,13 @@ export default function AssessmentResultsPage() {
                   <span className="text-white font-semibold">{formatDuration(timeTaken)}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-400">Correct Answers:</span>
-                  <span className="text-green-400 font-semibold">{correctAnswers}/{questions.length}</span>
+                  <span className="text-gray-400">Correct Flags:</span>
+                  <span className="text-green-400 font-semibold">{correctAnswers}/{totalFlags}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-gray-400">Accuracy:</span>
                   <span className="text-white font-semibold">
-                    {questions.length > 0 ? ((correctAnswers / questions.length) * 100).toFixed(1) : 0}%
+                    {totalFlags > 0 ? ((correctAnswers / totalFlags) * 100).toFixed(1) : 0}%
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
@@ -733,26 +778,27 @@ export default function AssessmentResultsPage() {
               
               <div className="space-y-4">
                 {questions.map((question, index) => {
-                  const submission = submissions.find(s => s.question_id === question.id);
-                  const isCorrect = submission?.is_correct || false;
-                  const wasAttempted = submission && submission.submitted_answer;
+                  const questionFlags = flags.filter(f => f.question_id === question.id);
+                  const subsForQuestion = submissions.filter(s => s.question_id === question.id);
+                  const anyCorrect = subsForQuestion.some(s => s.is_correct);
+                  const anyAttempted = subsForQuestion.length > 0;
 
                   return (
                     <div
                       key={question.id}
                       className={`border rounded-lg p-4 ${
-                        isCorrect
+                        anyCorrect
                           ? 'border-green-500 bg-green-900/20'
-                          : wasAttempted
+                          : anyAttempted
                           ? 'border-red-500 bg-red-900/20'
                           : 'border-gray-600 bg-gray-900/20'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center">
-                          {isCorrect ? (
+                          {anyCorrect ? (
                             <CheckCircle className="h-5 w-5 text-green-400 mr-2" />
-                          ) : wasAttempted ? (
+                          ) : anyAttempted ? (
                             <XCircle className="h-5 w-5 text-red-400 mr-2" />
                           ) : (
                             <div className="w-5 h-5 border-2 border-gray-500 rounded-full mr-2" />
@@ -772,21 +818,47 @@ export default function AssessmentResultsPage() {
                         </div>
                         <div className="flex items-center space-x-2">
                           <span className="text-gray-400 text-sm">
-                            {submission?.points_awarded || 0}/{question.score} pts
+                            {subsForQuestion.reduce((sum, s) => sum + (s.points_awarded || 0), 0)}/{question.score} pts
                           </span>
                         </div>
                       </div>
-                      
-                      <p className="text-gray-300 mb-2">{question.description}</p>
-                      
-                      {submission && (
-                        <div className="text-sm">
-                          <span className="text-gray-400">Your answer: </span>
-                          <span className={isCorrect ? 'text-green-400' : 'text-red-400'}>
-                            {submission.submitted_answer}
-                          </span>
-                        </div>
-                      )}
+
+                      <p className="text-gray-300 mb-3">{question.description}</p>
+
+                      {/* Per-flag breakdown */}
+                      <div className="space-y-2">
+                        {questionFlags.length > 0 ? (
+                          questionFlags.map((flag) => {
+                            const sub = subsForQuestion.find(s => s.flag_id === flag.id);
+                            const correct = sub?.is_correct;
+                            const attempted = Boolean(sub?.submitted_answer);
+                            return (
+                              <div key={flag.id} className="text-sm flex items-center justify-between border border-gray-700 rounded px-3 py-2 bg-gray-900/30">
+                                <div className="flex items-center">
+                                  {correct ? (
+                                    <CheckCircle className="h-4 w-4 text-green-400 mr-2" />
+                                  ) : attempted ? (
+                                    <XCircle className="h-4 w-4 text-red-400 mr-2" />
+                                  ) : (
+                                    <div className="w-4 h-4 border-2 border-gray-500 rounded-full mr-2" />
+                                  )}
+                                  <span className="text-gray-300">Flag {flag.id.slice(0, 6)}…</span>
+                                </div>
+                                <div className="text-right">
+                                  <div className={`${correct ? 'text-green-400' : attempted ? 'text-red-400' : 'text-gray-400'}`}>
+                                    {correct ? `+${sub?.points_awarded || flag.score} pts` : attempted ? 'Incorrect' : 'Unanswered'}
+                                  </div>
+                                  {attempted && (
+                                    <div className="text-xs text-gray-400">Your answer: <span className={`${correct ? 'text-green-400' : 'text-red-400'}`}>{sub?.submitted_answer}</span></div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="text-sm text-gray-400">No flags defined for this question.</div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -1008,7 +1080,7 @@ export default function AssessmentResultsPage() {
 
           {/* What's Next */}
           <div className="bg-dark-secondary border border-gray-border rounded-lg p-6">
-            <h3 className="text-xl font-bold text-white mb-4">What's Next?</h3>
+            <h3 className="text-xl font-bold text-white mb-4">What&#39;s Next?</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">

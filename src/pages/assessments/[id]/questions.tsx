@@ -142,6 +142,8 @@ export default function AssessmentQuestionsPage() {
   // NEW: answers per-flag and submitting state per-flag
   const [flagAnswers, setFlagAnswers] = useState<{ [flagId: string]: string }>({});
   const [submittingFlags, setSubmittingFlags] = useState<{ [flagId: string]: boolean }>({});
+  // Inline feedback per-flag
+  const [flagErrors, setFlagErrors] = useState<{ [flagId: string]: string }>({});
 
   // Function to reset all progress and state
   const resetAllProgress = useCallback(() => {
@@ -200,6 +202,7 @@ export default function AssessmentQuestionsPage() {
     const timer = setInterval(updateTimer, 1000);
 
     return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrollment]);
 
   // Auto-save
@@ -217,6 +220,7 @@ export default function AssessmentQuestionsPage() {
         clearInterval(autoSaveInterval.current);
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentAnswers]);
 
   const fetchData = useCallback(async () => {
@@ -429,7 +433,7 @@ export default function AssessmentQuestionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [assessmentIdParam, router.isReady, supabase, resetAllProgress]);
+  }, [assessmentIdParam, supabase, resetAllProgress, router]);
 
   useEffect(() => {
     fetchData();
@@ -667,8 +671,8 @@ export default function AssessmentQuestionsPage() {
             if (updateErr && String(updateErr.message || '').includes('submitted_flag')) {
               const res2 = await supabase
                 .from('flag_submissions')
+                // Column submitted_flag may not exist in some installations. Retry without it.
                 .update({ 
-                  submitted_flag: answer, 
                   value: answer,
                   is_correct: isCorrect,
                   score: pointsAwarded,
@@ -704,11 +708,11 @@ export default function AssessmentQuestionsPage() {
             if (insertErr && String(insertErr.message || '').includes('submitted_flag')) {
               const res2 = await supabase
                 .from('flag_submissions')
+                // Column submitted_flag may not exist in some installations. Retry without it.
                 .insert({
                   submission_id: activeSubmissionId,
                   question_id: questionId,
                   flag_id: flag.id,
-                  submitted_flag: answer,
                   value: answer,
                   is_correct: isCorrect,
                   score: pointsAwarded
@@ -741,37 +745,61 @@ export default function AssessmentQuestionsPage() {
           if (submissionData.is_correct) {
             const previouslyCorrect = submissions.some(s => s.question_id === questionId && s.flag_id === flag.id && s.is_correct);
             if (!previouslyCorrect) {
-              const newScore = (enrollment.current_score || 0) + (submissionData.points_awarded || 0);
-              
+              let computedScore = (enrollment.current_score || 0) + (submissionData.points_awarded || 0);
+
               // Update the correct table based on which flow we're using
               if (activeSubmissionId) {
-                // Modern flow: Update submissions table
-                await supabase.from('submissions').update({ 
-                  current_score: newScore,
-                  total_score: newScore 
-                }).eq('id', activeSubmissionId);
-                
+                // Try server-side recalculation if function exists
+                try {
+                  await supabase.rpc('update_submission_score', { submission_uuid: activeSubmissionId });
+                  const { data: updatedSub } = await supabase
+                    .from('submissions')
+                    .select('current_score, total_score')
+                    .eq('id', activeSubmissionId)
+                    .single();
+                  if (updatedSub) {
+                    computedScore = updatedSub.current_score || updatedSub.total_score || computedScore;
+                  } else {
+                    // Fallback: client-side update
+                    await supabase.from('submissions').update({ 
+                      current_score: computedScore,
+                      total_score: computedScore 
+                    }).eq('id', activeSubmissionId);
+                  }
+                } catch {
+                  // Fallback: client-side update if RPC unavailable
+                  await supabase.from('submissions').update({ 
+                    current_score: computedScore,
+                    total_score: computedScore 
+                  }).eq('id', activeSubmissionId);
+                }
+
                 // Also update enrollment for backward compatibility if it exists
                 if (enrollment.id && enrollment.id !== activeSubmissionId) {
-                  await supabase.from('enrollments').update({ current_score: newScore }).eq('id', enrollment.id);
+                  await supabase.from('enrollments').update({ current_score: computedScore }).eq('id', enrollment.id);
                 }
               } else {
                 // Legacy flow: Update enrollments table
-                await supabase.from('enrollments').update({ current_score: newScore }).eq('id', enrollment.id);
+                await supabase.from('enrollments').update({ current_score: computedScore }).eq('id', enrollment.id);
               }
-              
-              setEnrollment(prev => prev ? { ...prev, current_score: newScore } : null);
+
+              setEnrollment(prev => prev ? { ...prev, current_score: computedScore } : null);
             }
           }
 
-          // Clear the input for this flag
-          setFlagAnswers(prev => ({ ...prev, [flag.id]: '' }));
+          // UX: only retain value and clear errors if correct; else show inline error and keep user's input
+          if (submissionData.is_correct) {
+            setFlagAnswers(prev => ({ ...prev, [flag.id]: flag.value }));
+            setFlagErrors(prev => { const { [flag.id]: _omit, ...rest } = prev; return rest; });
+          } else {
+            setFlagErrors(prev => ({ ...prev, [flag.id]: 'Incorrect flag. Please try again.' }));
+          }
           return;
         } catch (err) {
           console.warn('flag_submissions write blocked by RLS, storing locally:', err);
           // Fallback: compute correctness client-side for local storage
-          const userAnswer = flag.is_case_sensitive ? answer : answer.toLowerCase();
-          const flagValue = flag.is_case_sensitive ? flag.value : flag.value.toLowerCase();
+          const userAnswer = flag.is_case_sensitive ? answer.trim() : answer.trim().toLowerCase();
+          const flagValue = flag.is_case_sensitive ? String(flag.value || '').trim() : String(flag.value || '').trim().toLowerCase();
           const isCorrect = userAnswer === flagValue;
           const pointsAwarded = isCorrect ? flag.score : 0;
 
@@ -823,7 +851,13 @@ export default function AssessmentQuestionsPage() {
             }
           }
 
-          setFlagAnswers(prev => ({ ...prev, [flag.id]: '' }));
+          // UX: only retain on correct; show error otherwise
+          if (isCorrect) {
+            setFlagAnswers(prev => ({ ...prev, [flag.id]: flag.value }));
+            setFlagErrors(prev => { const { [flag.id]: _omit, ...rest } = prev; return rest; });
+          } else {
+            setFlagErrors(prev => ({ ...prev, [flag.id]: 'Incorrect flag. Please try again.' }));
+          }
           return;
         }
       }
@@ -929,8 +963,13 @@ export default function AssessmentQuestionsPage() {
         }
       }
 
-      // Clear the input for this flag
-      setFlagAnswers(prev => ({ ...prev, [flag.id]: '' }));
+      // If correct, show canonical value; if incorrect, show an inline error
+      if (isCorrect) {
+        setFlagAnswers(prev => ({ ...prev, [flag.id]: flag.value }));
+        setFlagErrors(prev => { const { [flag.id]: _omit, ...rest } = prev; return rest; });
+      } else {
+        setFlagErrors(prev => ({ ...prev, [flag.id]: 'Incorrect flag. Please try again.' }));
+      }
     } catch (error: any) {
       console.error('Submission error:', error);
       alert('An error occurred while submitting your flag. Please try again.');
@@ -960,10 +999,23 @@ export default function AssessmentQuestionsPage() {
       });
       
       // Calculate final score and progress (by flags)
-      const totalScore = allSubmissions.reduce((sum, sub) => sum + (sub.points_awarded || 0), 0);
-      const correctFlags = allSubmissions.filter(sub => sub.is_correct).length;
-      const totalFlags = flags.length;
-      const progress = totalFlags > 0 ? (correctFlags / totalFlags) * 100 : 0;
+      let totalScore = allSubmissions.reduce((sum, sub) => sum + (sub.points_awarded || 0), 0);
+      let correctFlags = allSubmissions.filter(sub => sub.is_correct).length;
+      let totalFlags = flags.length;
+
+      // If modern flow active, derive from DB for source of truth
+      if (activeSubmissionId) {
+        const { data: flagSubs } = await supabase
+          .from('flag_submissions')
+          .select('is_correct, score')
+          .eq('submission_id', activeSubmissionId);
+        if (flagSubs) {
+          totalScore = flagSubs.reduce((sum, f) => sum + (f.is_correct ? (f.score || 0) : 0), 0);
+          correctFlags = flagSubs.filter(f => f.is_correct).length;
+        }
+      }
+
+      const progress = totalFlags > 0 ? Math.min(100, (correctFlags / totalFlags) * 100) : 0;
 
       console.log('Submitting assessment with:', {
         totalScore,
@@ -973,7 +1025,7 @@ export default function AssessmentQuestionsPage() {
         allSubmissions: allSubmissions.length
       });
 
-      // Update enrollment
+  // Update enrollment
       const { error: enrollmentError } = await supabase
         .from('enrollments')
         .update({
@@ -1070,6 +1122,21 @@ export default function AssessmentQuestionsPage() {
         console.log('Legacy flow - calculated final score:', finalScore);
       }
 
+      // Compute progress by flags if we can
+      let progressPct = 100;
+      try {
+        const perQuestionFlags = questions.reduce((sum, q) => sum + (q as any).no_of_flags || 0, 0);
+        const totalFlags = perQuestionFlags > 0 ? perQuestionFlags : flags.length;
+        if (activeSubmissionId && totalFlags > 0) {
+          const { data: flagSubs } = await supabase
+            .from('flag_submissions')
+            .select('is_correct')
+            .eq('submission_id', activeSubmissionId);
+          const correctCount = flagSubs?.filter(f => f.is_correct).length || 0;
+          progressPct = Math.min(100, (correctCount / totalFlags) * 100);
+        }
+      } catch {}
+
       // Update enrollment with final score
       const { error: enrollmentError } = await supabase
         .from('enrollments')
@@ -1078,7 +1145,7 @@ export default function AssessmentQuestionsPage() {
           completed_at: new Date().toISOString(),
           final_score: finalScore,
           current_score: finalScore,
-          progress_percentage: 100
+          progress_percentage: progressPct
         })
         .eq('id', enrollment.id);
 
@@ -1659,6 +1726,18 @@ export default function AssessmentQuestionsPage() {
                 <span className="font-mono text-lg">{formatTime(timeLeft)}</span>
               </div>
 
+              {/* Support Link */}
+              {enrollment && (
+                <Link
+                  href="/support"
+                  className="px-3 py-2 bg-gray-700 text-white rounded-lg border border-gray-border hover:bg-gray-600 transition-colors text-sm"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Support
+                </Link>
+              )}
+
               {/* Submit Assessment Button */}
               <button
                 onClick={handleSubmitAssessmentWithTerminate}
@@ -1904,30 +1983,53 @@ export default function AssessmentQuestionsPage() {
                     const prior = submissions.find(s => s.flag_id === flag.id);
                     const disabled = prior?.is_correct;
                     return (
-                      <div key={flag.id} className="flex space-x-3">
-                        <input
-                          type="text"
-                          value={flagAnswers[flag.id] ?? ''}
-                          onChange={(e) => setFlagAnswers(prev => ({ ...prev, [flag.id]: e.target.value }))
-                          }
-                          placeholder={`Enter flag ${flag.id.substring(0, 6)}...`}
-                          className="flex-1 px-4 py-3 bg-dark-bg border border-gray-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-neon-green"
-                          disabled={disabled}
-                        />
-                        <button
-                          onClick={() => handleSubmitFlagPerFlag(currentQuestion.id, flag)}
-                          disabled={!flagAnswers[flag.id]?.trim() || submittingFlags[flag.id] || disabled}
-                          className="px-6 py-3 bg-gradient-to-r from-neon-green to-electric-blue text-dark-bg font-semibold rounded-lg hover:from-green-500 hover:to-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                        >
-                          {submittingFlags[flag.id] ? (
-                            <div className="w-5 h-5 border-2 border-dark-bg border-t-transparent rounded-full animate-spin" />
-                          ) : (
-                            <>
-                              <Send className="h-4 w-4 mr-2" />
-                              Submit
-                            </>
-                          )}
-                        </button>
+                      <div key={flag.id} className="space-y-1">
+                        <div className="flex space-x-3">
+                          <input
+                            type="text"
+                            value={flagAnswers[flag.id] ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setFlagAnswers(prev => ({ ...prev, [flag.id]: v }));
+                              // Clear error as user types
+                              if (flagErrors[flag.id]) {
+                                setFlagErrors(prev => { const { [flag.id]: _omit, ...rest } = prev; return rest; });
+                              }
+                            }}
+                            placeholder={`Enter flag ${flag.id.substring(0, 6)}...`}
+                            className={`flex-1 px-4 py-3 bg-dark-bg border rounded-lg text-white placeholder-gray-500 focus:outline-none ${
+                              disabled ? 'border-green-600' : flagErrors[flag.id] ? 'border-red-500 focus:border-red-500' : 'border-gray-border focus:border-neon-green'
+                            }`}
+                            disabled={disabled}
+                          />
+                          <button
+                            onClick={() => handleSubmitFlagPerFlag(currentQuestion.id, flag)}
+                            disabled={!flagAnswers[flag.id]?.trim() || submittingFlags[flag.id] || disabled}
+                            className="px-6 py-3 bg-gradient-to-r from-neon-green to-electric-blue text-dark-bg font-semibold rounded-lg hover:from-green-500 hover:to-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                          >
+                            {submittingFlags[flag.id] ? (
+                              <div className="w-5 h-5 border-2 border-dark-bg border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <>
+                                <Send className="h-4 w-4 mr-2" />
+                                Submit
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        {/* Inline feedback */}
+                        {flagErrors[flag.id] && (
+                          <div className="text-sm text-red-400 flex items-center">
+                            <XCircle className="h-4 w-4 mr-1" />
+                            {flagErrors[flag.id]}
+                          </div>
+                        )}
+                        {disabled && (
+                          <div className="text-sm text-green-400 flex items-center">
+                            <CheckCircle className="h-4 w-4 mr-1" />
+                            Correct (+{prior?.points_awarded || flag.score} pts)
+                          </div>
+                        )}
                       </div>
                     );
                   })}

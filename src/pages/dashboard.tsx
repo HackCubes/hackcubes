@@ -95,32 +95,36 @@ export default function Dashboard() {
         }
 
         // Get recent challenges
+        // Recent correct flags by this user via modern schema (flag_submissions -> submissions)
         const { data: recentData, error: recentError } = await supabase
           .from('flag_submissions')
           .select(`
             id,
-            score_earned,
-            submitted_at,
-            questions (
+            score,
+            created_at,
+            question_id,
+            is_correct,
+            submissions!inner(candidate_id),
+            questions:question_id (
               id,
               name,
               category,
               difficulty
             )
           `)
-          .eq('user_id', user.id)
           .eq('is_correct', true)
-          .order('submitted_at', { ascending: false })
+          .eq('submissions.candidate_id', user.id)
+          .order('created_at', { ascending: false })
           .limit(5);
 
         if (recentData) {
           const formattedRecent = recentData.map((item: any) => ({
-            id: item.questions.id,
-            name: item.questions.name,
-            category: item.questions.category,
-            difficulty: item.questions.difficulty,
-            scoreEarned: item.score_earned,
-            completedAt: item.submitted_at
+            id: item.questions?.id || item.question_id,
+            name: item.questions?.name || 'Challenge',
+            category: item.questions?.category || 'General',
+            difficulty: item.questions?.difficulty || 'Medium',
+            scoreEarned: item.score || 0,
+            completedAt: item.created_at
           }));
           setRecentChallenges(formattedRecent);
         }
