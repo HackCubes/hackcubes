@@ -287,7 +287,7 @@ export default function LandingPage() {
         <HeroSection />
 
         {/* 2. Countdown + Scarcity Banner */}
-        <section className="bg-red-900 border-y-2 border-red-500 py-4 relative z-20">
+        {/* <section className="bg-red-900 border-y-2 border-red-500 py-4 relative z-20">
           <div className="container mx-auto px-4 text-center">
             <div className="flex flex-col md:flex-row items-center justify-center gap-4">
               <span className="text-lg font-bold">⏰ Top 10 giveaway winners get free certs! Early bird price: $99 USD</span>
@@ -299,7 +299,7 @@ export default function LandingPage() {
               </div>
             </div>
           </div>
-        </section>
+        </section> */}
 
         {/* 3. How It Works (3-Step Flow) */}
         <section className="py-20 px-4 relative z-20">
